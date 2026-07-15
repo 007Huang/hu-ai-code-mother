@@ -1,27 +1,38 @@
-<script setup lang="ts">
-// 页面底部版权信息组件
-</script>
-
 <template>
-  <div class="global-footer">
-    编程导航原创项目 by
-    <a href="https://www.codefather.cn" target="_blank" rel="noopener noreferrer">程序员鱼皮</a>
-  </div>
+  <a-layout-footer class="footer">
+    <div class="footer-content">
+      <p class="copyright">
+        <a
+          href="https://www.codefather.cn"
+          target="_blank"
+          rel="noopener noreferrer"
+          class="author-link"
+        >
+          编程导航原创项目 by 程序员鱼皮
+        </a>
+      </p>
+    </div>
+  </a-layout-footer>
 </template>
 
+<script setup lang="ts">
+// 无需额外的响应式数据
+</script>
+
 <style scoped>
-.global-footer {
+.footer {
+  background: #efefef;
   text-align: center;
+  padding: 20px;
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+}
+
+.copyright {
+  margin: 0;
+  color: #666;
   font-size: 14px;
-  color: rgba(0, 0, 0, 0.65);
-}
-
-.global-footer a {
-  color: #1677ff;
-  text-decoration: none;
-}
-
-.global-footer a:hover {
-  text-decoration: underline;
 }
 </style>
