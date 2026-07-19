@@ -1,6 +1,6 @@
 package com.huzi.huaicodemother.service;
 
-import com.huzi.huaicodemother.model.dto.UserQueryRequest;
+import com.huzi.huaicodemother.model.dto.user.UserQueryRequest;
 import com.huzi.huaicodemother.model.vo.LoginUserVO;
 import com.huzi.huaicodemother.model.vo.UserVO;
 import com.mybatisflex.core.query.QueryWrapper;

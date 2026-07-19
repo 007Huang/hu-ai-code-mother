@@ -1,13 +1,7 @@
 package com.huzi.huaicodemother.service;
 
-import com.huzi.huaicodemother.model.dto.AppAddRequest;
-import com.huzi.huaicodemother.model.dto.AppAdminQueryRequest;
-import com.huzi.huaicodemother.model.dto.AppAdminUpdateRequest;
-import com.huzi.huaicodemother.model.dto.AppQueryRequest;
-import com.huzi.huaicodemother.model.dto.AppUpdateRequest;
-import com.huzi.huaicodemother.model.entity.User;
+import com.huzi.huaicodemother.model.dto.app.AppQueryRequest;
 import com.huzi.huaicodemother.model.vo.AppVO;
-import com.mybatisflex.core.paginate.Page;
 import com.mybatisflex.core.query.QueryWrapper;
 import com.mybatisflex.core.service.IService;
 import com.huzi.huaicodemother.model.entity.App;

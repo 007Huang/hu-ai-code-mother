@@ -5,7 +5,7 @@ import cn.hutool.core.collection.CollUtil;
 import cn.hutool.core.util.StrUtil;
 import com.huzi.huaicodemother.exception.BusinessException;
 import com.huzi.huaicodemother.exception.ErrorCode;
-import com.huzi.huaicodemother.model.dto.UserQueryRequest;
+import com.huzi.huaicodemother.model.dto.user.UserQueryRequest;
 import com.huzi.huaicodemother.model.enums.UserRoleEnum;
 import com.huzi.huaicodemother.model.vo.LoginUserVO;
 import com.huzi.huaicodemother.model.vo.UserVO;

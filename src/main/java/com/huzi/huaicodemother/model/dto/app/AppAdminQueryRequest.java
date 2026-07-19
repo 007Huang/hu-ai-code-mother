@@ -1,4 +1,4 @@
-package com.huzi.huaicodemother.model.dto;
+package com.huzi.huaicodemother.model.dto.app;
 
 import com.huzi.huaicodemother.common.PageRequest;
 import lombok.Data;
@@ -7,17 +7,17 @@ import lombok.EqualsAndHashCode;
 import java.io.Serializable;
 
 /**
- * 应用查询请求（用户用）
+ * 应用查询请求（管理员用）
  *
  * @author <a href="https://github.com/007Huang">hzh</a>
  * @since 2026-07-19
  */
 @EqualsAndHashCode(callSuper = true)
 @Data
-public class AppQueryRequest extends PageRequest implements Serializable {
+public class AppAdminQueryRequest extends PageRequest implements Serializable {
 
     /**
-     * id
+     * 应用 id
      */
     private Long id;
 
@@ -52,21 +52,9 @@ public class AppQueryRequest extends PageRequest implements Serializable {
     private Integer priority;
 
     /**
-     * 创建用户id
+     * 创建用户 id
      */
     private Long userId;
 
     private static final long serialVersionUID = 1L;
 }
-
-//@EqualsAndHashCode(callSuper = true)
-//@Data
-//public class AppQueryRequest extends PageRequest implements Serializable {
-//
-//    /**
-//     * 应用名称（模糊查询）
-//     */
-//    private String appName;
-//
-//    private static final long serialVersionUID = 1L;
-//}

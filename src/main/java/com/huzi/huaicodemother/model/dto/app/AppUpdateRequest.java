@@ -1,4 +1,4 @@
-package com.huzi.huaicodemother.model.dto;
+package com.huzi.huaicodemother.model.dto.app;
 
 import lombok.Data;
 
