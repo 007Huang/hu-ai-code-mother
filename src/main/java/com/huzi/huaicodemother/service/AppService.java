@@ -1,10 +1,12 @@
 package com.huzi.huaicodemother.service;
 
 import com.huzi.huaicodemother.model.dto.app.AppQueryRequest;
+import com.huzi.huaicodemother.model.entity.User;
 import com.huzi.huaicodemother.model.vo.AppVO;
 import com.mybatisflex.core.query.QueryWrapper;
 import com.mybatisflex.core.service.IService;
 import com.huzi.huaicodemother.model.entity.App;
+import reactor.core.publisher.Flux;
 
 import java.util.List;
 
@@ -15,6 +17,50 @@ import java.util.List;
  * @since 2026-07-10
  */
 public interface AppService extends IService<App> {
+
+
+    /**
+     * 获取用户对话并生成代码
+     *
+     * @param appId 应用 id
+     * @param message 用户输入
+     * @param loginUser 当前登录用户
+     * @return 生成的代码
+     */
+    Flux<String> chatToGenCode(Long appId, String message, User loginUser);
+    /**
+     * 应用部署
+     *
+     * @param appId 应用 id
+     * @param loginUser 当前登录用户
+     * @return 可访问的部署地址
+     */
+    String deployApp(Long appId,User loginUser);
+
+
+    /**
+     * 获取脱敏后的应用信息
+     *
+     * @param app 应用实体
+     * @return 脱敏后的应用视图
+     */
+    AppVO getAppVO(App app);
+    /**
+     * 根据查询请求构造 QueryWrapper
+     *
+     * @param appQueryRequest 查询请求
+     * @return QueryWrapper
+     */
+    QueryWrapper getQueryWrapper(AppQueryRequest appQueryRequest);
+    /**
+     * 获取脱敏后的应用信息列表
+     *
+     * @param appList 应用列表
+     * @return 脱敏后的应用视图列表
+     */
+    List<AppVO> getAppVOList(List<App> appList);
+
+
 
 //    /**
 //     * 创建应用
@@ -43,28 +89,7 @@ public interface AppService extends IService<App> {
 //     */
 //    boolean deleteMyApp(Long id, User loginUser);
 
-    /**
-     * 获取脱敏后的应用信息
-     *
-     * @param app 应用实体
-     * @return 脱敏后的应用视图
-     */
 
-    AppVO getAppVO(App app);
-    /**
-     * 根据查询请求构造 QueryWrapper
-     *
-     * @param appQueryRequest 查询请求
-     * @return QueryWrapper
-     */
-    QueryWrapper getQueryWrapper(AppQueryRequest appQueryRequest);
-    /**
-     * 获取脱敏后的应用信息列表
-     *
-     * @param appList 应用列表
-     * @return 脱敏后的应用视图列表
-     */
-    List<AppVO> getAppVOList(List<App> appList);
 
 //    /**
 //     * 用户根据 id 查看自己的应用详情
