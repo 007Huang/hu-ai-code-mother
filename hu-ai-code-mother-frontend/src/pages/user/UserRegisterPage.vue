@@ -38,7 +38,7 @@
 
 <script setup lang="ts">
 import { useRouter } from 'vue-router'
-import { userRegister } from '@/api/userController.ts'
+import { register } from '@/api/userController.ts'
 import { message } from 'ant-design-vue'
 import { reactive } from 'vue'
 
@@ -69,7 +69,7 @@ const validateCheckPassword = (rule: unknown, value: string, callback: (error?: 
  * @param values
  */
 const handleSubmit = async (values: API.UserRegisterRequest) => {
-  const res = await userRegister(values)
+  const res = await register(values)
   // 注册成功，跳转到登录页面
   if (res.data.code === 0) {
     message.success('注册成功')
