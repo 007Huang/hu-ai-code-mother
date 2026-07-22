@@ -1,69 +1,53 @@
 <template>
   <div id="userManagePage">
-  <!-- 搜索表单 -->
-  <a-form layout="inline" :model="searchParams" @finish="doSearch">
-    <a-form-item label="账号">
-      <a-input v-model:value="searchParams.userAccount" placeholder="输入账号" />
-    </a-form-item>
-    <a-form-item label="用户名">
-      <a-input v-model:value="searchParams.userName" placeholder="输入用户名" />
-    </a-form-item>
-    <a-form-item>
-      <a-button type="primary" html-type="submit">搜索</a-button>
-    </a-form-item>
-  </a-form>
-  <a-divider />
-  <!-- 表格 -->
-
-
-  <!-- pagination="pagination" 和 @change="doTableChange" 之间是否有空格HTML 属性（或 Vue 指令）之间必须用空格分隔。<a-table :columns="columns" :data-source="data":pagination="pagination":@change="doTableChange"> -->
-   <a-table
-  :columns="columns"
-  :data-source="data"
-  :pagination="pagination"
-  @change="doTableChange"
->
-    <!--自定义列头 <template #headerCell="{ column }">
-      <template v-if="column.key === 'name'">
-        <span>
-          <smile-outlined />
-          Name
-        </span>
+    <!-- 搜索表单 -->
+    <a-form layout="inline" :model="searchParams" @finish="doSearch">
+      <a-form-item label="账号">
+        <a-input v-model:value="searchParams.userAccount" placeholder="输入账号" />
+      </a-form-item>
+      <a-form-item label="用户名">
+        <a-input v-model:value="searchParams.userName" placeholder="输入用户名" />
+      </a-form-item>
+      <a-form-item>
+        <a-button type="primary" html-type="submit">搜索</a-button>
+      </a-form-item>
+    </a-form>
+    <a-divider />
+    <!-- 表格 -->
+    <a-table
+      :columns="columns"
+      :data-source="data"
+      :pagination="pagination"
+      @change="doTableChange"
+    >
+      <template #bodyCell="{ column, record }">
+        <template v-if="column.dataIndex === 'userAvatar'">
+          <a-image :src="record.userAvatar" :width="120" />
+        </template>
+        <template v-else-if="column.dataIndex === 'userRole'">
+          <div v-if="record.userRole === 'admin'">
+            <a-tag color="green">管理员</a-tag>
+          </div>
+          <div v-else>
+            <a-tag color="blue">普通用户</a-tag>
+          </div>
+        </template>
+        <template v-else-if="column.dataIndex === 'createTime'">
+          {{ dayjs(record.createTime).format('YYYY-MM-DD HH:mm:ss') }}
+        </template>
+        <template v-else-if="column.key === 'action'">
+          <a-button danger @click="doDelete(record.id)">删除</a-button>
+        </template>
       </template>
-    </template> -->
-
-   <template #bodyCell="{ column, record }">
-  <template v-if="column.dataIndex === 'userAvatar'">
-    <a-image :src="record.userAvatar" :width="120" />
-  </template>
-  <template v-else-if="column.dataIndex === 'userRole'">
-    <div v-if="record.userRole === 'admin'">
-      <a-tag color="green">管理员</a-tag>
-    </div>
-    <div v-else>
-      <a-tag color="blue">普通用户</a-tag>
-    </div>
-  </template>
-  <template v-else-if="column.dataIndex === 'createTime'">
-    {{ dayjs(record.createTime).format('YYYY-MM-DD HH:mm:ss') }}
-  </template>
-  <!-- <template v-else-if="column.dataIndex === 'updateTime'">
-    {{ dayjs(record.updateTime).format('YYYY-MM-DD HH:mm:ss') }}
-  </template> -->
-  <template v-else-if="column.key === 'action'">
-    <a-button danger @click="doDelete(record.id)">删除</a-button>
-  </template>
-</template>
-
-  </a-table>
+    </a-table>
   </div>
 </template>
 <script lang="ts" setup>
-import { deleteUser, listUserVoByPage } from '@/api/userController';
-import { SmileOutlined, DownOutlined } from '@ant-design/icons-vue';
-import { message } from 'ant-design-vue';
-import { computed, onMounted, reactive, ref } from 'vue';
-import dayjs from "dayjs"
+import { computed, onMounted, reactive, ref } from 'vue'
+import { deleteUser, listUserVoByPage } from '@/api/userController.ts'
+import { message } from 'ant-design-vue'
+import dayjs from 'dayjs'
+
 const columns = [
   {
     title: 'id',
@@ -93,25 +77,22 @@ const columns = [
     title: '创建时间',
     dataIndex: 'createTime',
   },
-  //  {
-  //   title: '更新时间',
-  //   dataIndex: 'updateTime',
-  // },
   {
     title: '操作',
     key: 'action',
   },
 ]
-//展示数据
-const data  = ref<API.UserVO[]>()
-const total = ref()
-//搜索条件
-const searchParams= reactive <API.UserQueryRequest>(
-  {
-    pageNum:1,
-    pageSize:3
-  }
-)
+
+// 展示的数据
+const data = ref<API.UserVO[]>([])
+const total = ref(0)
+
+// 搜索条件
+const searchParams = reactive<API.UserQueryRequest>({
+  pageNum: 1,
+  pageSize: 10,
+})
+
 // 获取数据
 const fetchData = async () => {
   const res = await listUserVoByPage({
@@ -124,7 +105,8 @@ const fetchData = async () => {
     message.error('获取数据失败，' + res.data.message)
   }
 }
-// 分页参数,computed计算属性
+
+// 分页参数
 const pagination = computed(() => {
   return {
     current: searchParams.pageNum ?? 1,
@@ -134,20 +116,23 @@ const pagination = computed(() => {
     showTotal: (total: number) => `共 ${total} 条`,
   }
 })
-// 表格变化处理
-const doTableChange = (page: any) => {
+
+// 表格分页变化时的操作
+const doTableChange = (page: { current: number; pageSize: number }) => {
   searchParams.pageNum = page.current
   searchParams.pageSize = page.pageSize
   fetchData()
 }
-// 获取数据
+
+// 搜索数据
 const doSearch = () => {
   // 重置页码
   searchParams.pageNum = 1
   fetchData()
 }
-// 删除数据 string->number?
-const doDelete = async (id: number) => {
+
+// 删除数据
+const doDelete = async (id: string) => {
   if (!id) {
     return
   }
@@ -161,11 +146,16 @@ const doDelete = async (id: number) => {
   }
 }
 
-
-
-// 页面加载时请求一次，很重要，生命周期
+// 页面加载时请求一次
 onMounted(() => {
   fetchData()
 })
 </script>
 
+<style scoped>
+#userManagePage {
+  padding: 24px;
+  background: white;
+  margin-top: 16px;
+}
+</style>

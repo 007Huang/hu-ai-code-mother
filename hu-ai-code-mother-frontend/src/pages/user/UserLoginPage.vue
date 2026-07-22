@@ -6,14 +6,17 @@
       <a-form-item name="userAccount" :rules="[{ required: true, message: '请输入账号' }]">
         <a-input v-model:value="formState.userAccount" placeholder="请输入账号" />
       </a-form-item>
-      <a-form-item name="userPassword" :rules="[
-        { required: true, message: ' 请输入密码' },
-        { min: 8, message: '密码不能小于 8 位' },
-      ]">
+      <a-form-item
+        name="userPassword"
+        :rules="[
+          { required: true, message: '请输入密码' },
+          { min: 8, message: '密码长度不能小于 8 位' },
+        ]"
+      >
         <a-input-password v-model:value="formState.userPassword" placeholder="请输入密码" />
       </a-form-item>
       <div class="tips">
-        没有账号？
+        没有账号
         <RouterLink to="/user/register">去注册</RouterLink>
       </div>
       <a-form-item>
@@ -22,38 +25,17 @@
     </a-form>
   </div>
 </template>
-
 <script lang="ts" setup>
-import { userLogin } from '@/api/userController';
-import { useLoginUserStore } from '@/stores/loginUser';
-import { message } from 'ant-design-vue';
-import { genDisabledStyle } from 'ant-design-vue/es/input/style';
-import { reactive } from 'vue';
-import { useRouter } from 'vue-router';
+import { reactive } from 'vue'
+import { userLogin } from '@/api/userController.ts'
+import { useLoginUserStore } from '@/stores/loginUser.ts'
+import { useRouter } from 'vue-router'
+import { message } from 'ant-design-vue'
 
-// interface FormState {
-//   username: string;
-//   password: string;
-//   // remember: boolean;
-// }
-
-// const formState = reactive<FormState>({
-//   username: '',
-//   password: '',
-//   remember: true,
-// });
 const formState = reactive<API.UserLoginRequest>({
   userAccount: '',
   userPassword: '',
 })
-
-// const handleSubmit = (values: any) => {
-//   console.log('Success:', values);
-// };
-
-// const onFinishFailed = (errorInfo: any) => {
-//   console.log('Failed:', errorInfo);
-// };
 
 const router = useRouter()
 const loginUserStore = useLoginUserStore()
@@ -68,7 +50,7 @@ const handleSubmit = async (values: any) => {
   if (res.data.code === 0 && res.data.data) {
     await loginUserStore.fetchLoginUser()
     message.success('登录成功')
-     router.push({
+    router.push({
       path: '/',
       replace: true,
     })
@@ -76,13 +58,14 @@ const handleSubmit = async (values: any) => {
     message.error('登录失败，' + res.data.message)
   }
 }
-
 </script>
 
-<style>
+<style scoped>
 #userLoginPage {
-  max-width: 360px;
-  margin: 0 auto;
+  background: white;
+  max-width: 720px;
+  padding: 24px;
+  margin: 24px auto;
 }
 
 .title {
@@ -97,10 +80,9 @@ const handleSubmit = async (values: any) => {
 }
 
 .tips {
-  margin-bottom: 16px;
+  text-align: right;
   color: #bbb;
   font-size: 13px;
-  text-align: right;
+  margin-bottom: 16px;
 }
-
 </style>
