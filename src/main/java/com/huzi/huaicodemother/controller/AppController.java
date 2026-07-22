@@ -49,6 +49,9 @@ public class AppController {
     @Resource
     private UserService userService;
 
+//    @Resource
+//    private ChatHistoryService chatHistoryService;
+
     /**
      * 应用聊天生成代码（流式 SSE）声明MediaType.TEXT_EVENT_STREAM_VALUE
      *
@@ -369,6 +372,7 @@ public class AppController {
         // 判断是否存在
         App oldApp = appService.getById(id);
         ThrowUtils.throwIf(oldApp == null, ErrorCode.NOT_FOUND_ERROR);
+        // 级联删除该应用的所有对话历史
         boolean result = appService.removeById(id);
         return ResultUtils.success(result);
     }

@@ -1,4 +1,4 @@
-package com.huzi.huzicodemother.genresult.entity;
+package com.huzi.huaicodemother.model.entity;
 
 import com.mybatisflex.annotation.Column;
 import com.mybatisflex.annotation.Id;
@@ -9,13 +9,14 @@ import java.time.LocalDateTime;
 
 import java.io.Serial;
 
+import com.mybatisflex.core.keygen.KeyGenerators;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
 /**
- * 应用 实体类。
+ * 对话历史 实体类。
  *
  * @author <a href="https://github.com/007Huang">hzh</a>
  * @since 2026-07-10
@@ -24,8 +25,8 @@ import lombok.NoArgsConstructor;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-@Table("app")
-public class App implements Serializable {
+@Table("chat_history")
+public class ChatHistory implements Serializable {
 
     @Serial
     private static final long serialVersionUID = 1L;
@@ -33,60 +34,31 @@ public class App implements Serializable {
     /**
      * id
      */
-    @Id(keyType = KeyType.Auto)
+    @Id(keyType = KeyType.Generator,value = KeyGenerators.snowFlakeId)
     private Long id;
 
     /**
-     * 应用名称
+     * 消息
      */
-    @Column("appName")
-    private String appName;
+    private String message;
 
     /**
-     * 应用封面
+     * user/ai
      */
-    private String cover;
+    @Column("messageType")
+    private String messageType;
 
     /**
-     * 应用初始化的 prompt
+     * 应用id
      */
-    @Column("initPrompt")
-    private String initPrompt;
-
-    /**
-     * 代码生成类型（枚举）
-     */
-    @Column("codeGenType")
-    private String codeGenType;
-
-    /**
-     * 部署标识
-     */
-    @Column("deployKey")
-    private String deployKey;
-
-    /**
-     * 部署时间
-     */
-    @Column("deployedTime")
-    private LocalDateTime deployedTime;
-
-    /**
-     * 优先级
-     */
-    private Integer priority;
+    @Column("appId")
+    private Long appId;
 
     /**
      * 创建用户id
      */
     @Column("userId")
     private Long userId;
-
-    /**
-     * 编辑时间
-     */
-    @Column("editTime")
-    private LocalDateTime editTime;
 
     /**
      * 创建时间
