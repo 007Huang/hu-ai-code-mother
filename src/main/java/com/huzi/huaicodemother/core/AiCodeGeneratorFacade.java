@@ -1,13 +1,21 @@
 package com.huzi.huaicodemother.core;
 
+import cn.hutool.json.JSONUtil;
 import com.huzi.huaicodemother.ai.AiCodeGeneratorService;
+import com.huzi.huaicodemother.ai.AiCodeGeneratorServiceFactory;
 import com.huzi.huaicodemother.ai.model.HtmlCodeResult;
 import com.huzi.huaicodemother.ai.model.MultiFileCodeResult;
+import com.huzi.huaicodemother.ai.model.message.AiResponseMessage;
+import com.huzi.huaicodemother.ai.model.message.ToolExecutedMessage;
+import com.huzi.huaicodemother.ai.model.message.ToolRequestMessage;
 import com.huzi.huaicodemother.core.parser.CodeParserExecutor;
 import com.huzi.huaicodemother.core.saver.CodeFileSaverExecutor;
 import com.huzi.huaicodemother.exception.BusinessException;
 import com.huzi.huaicodemother.exception.ErrorCode;
 import com.huzi.huaicodemother.model.enums.CodeGenTypeEnum;
+import dev.langchain4j.model.chat.response.ChatResponse;
+import dev.langchain4j.service.TokenStream;
+import dev.langchain4j.service.tool.ToolExecution;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -22,8 +30,10 @@ import java.io.File;
 @Service
 public class AiCodeGeneratorFacade {
 
+//    @Resource
+//    private AiCodeGeneratorService aiCodeGeneratorService;
     @Resource
-    private AiCodeGeneratorService aiCodeGeneratorService;
+    private AiCodeGeneratorServiceFactory aiCodeGeneratorServiceFactory;
 
     /**
      * 统一入口：根据类型生成并保存代码
@@ -37,6 +47,8 @@ public class AiCodeGeneratorFacade {
         if (codeGenTypeEnum == null) {
             throw new BusinessException(ErrorCode.SYSTEM_ERROR, "生成类型为空");
         }
+        //根据appId获取相应的AI服务实例
+        AiCodeGeneratorService aiCodeGeneratorService = aiCodeGeneratorServiceFactory.getAiCodeGeneratorService(appId,codeGenTypeEnum);
         return switch (codeGenTypeEnum) {
             case HTML -> {
                 HtmlCodeResult result = aiCodeGeneratorService.generateHtmlCode(userMessage);
@@ -64,6 +76,8 @@ public class AiCodeGeneratorFacade {
         if (codeGenTypeEnum == null) {
             throw new BusinessException(ErrorCode.SYSTEM_ERROR, "生成类型为空");
         }
+        //根据appId获取相应的AI服务实例
+        AiCodeGeneratorService aiCodeGeneratorService = aiCodeGeneratorServiceFactory.getAiCodeGeneratorService(appId,codeGenTypeEnum);
         return switch (codeGenTypeEnum) {
             case HTML -> {
                 Flux<String> codeStream = aiCodeGeneratorService.generateHtmlCodeStream(userMessage);
@@ -73,12 +87,48 @@ public class AiCodeGeneratorFacade {
                 Flux<String> codeStream = aiCodeGeneratorService.generateMultiFileCodeStream(userMessage);
                 yield processCodeStream(codeStream, CodeGenTypeEnum.MULTI_FILE,appId);
             }
+            case VUE_PROJECT -> {
+                TokenStream tokenStream = aiCodeGeneratorService.generateVueProjectCodeStream(appId, userMessage);
+                yield processTokenStream(tokenStream);
+            }
             default -> {
                 String errorMessage = "不支持的生成类型：" + codeGenTypeEnum.getValue();
                 throw new BusinessException(ErrorCode.SYSTEM_ERROR, errorMessage);
             }
         };
     }
+
+    /**
+     * 将 TokenStream 转换为 Flux<String>，并传递工具调用信息,适配器模式
+     *
+     * @param tokenStream TokenStream 对象
+     * @return Flux<String> 流式响应
+     */
+    private Flux<String> processTokenStream(TokenStream tokenStream) {
+        return Flux.create(sink -> {
+            tokenStream.onPartialResponse((String partialResponse) -> {
+                        AiResponseMessage aiResponseMessage = new AiResponseMessage(partialResponse);
+                        sink.next(JSONUtil.toJsonStr(aiResponseMessage));
+                    })
+                    .onPartialToolExecutionRequest((index, toolExecutionRequest) -> {
+                        ToolRequestMessage toolRequestMessage = new ToolRequestMessage(toolExecutionRequest);
+                        sink.next(JSONUtil.toJsonStr(toolRequestMessage));
+                    })
+                    .onToolExecuted((ToolExecution toolExecution) -> {
+                        ToolExecutedMessage toolExecutedMessage = new ToolExecutedMessage(toolExecution);
+                        sink.next(JSONUtil.toJsonStr(toolExecutedMessage));
+                    })
+                    .onCompleteResponse((ChatResponse response) -> {
+                        sink.complete();
+                    })
+                    .onError((Throwable error) -> {
+                        error.printStackTrace();
+                        sink.error(error);
+                    })
+                    .start();
+        });
+    }
+
 
 
     /**
@@ -107,6 +157,45 @@ public class AiCodeGeneratorFacade {
                 log.error("保存失败: {}", e.getMessage());
             }
         });
+
+
+//    private Flux<String> processCodeStream(Flux<String> codeStream, CodeGenTypeEnum codeGenType, Long appId) {
+//        // 使用 AtomicReference 或确保单线程上下文，这里假设是单线程流
+//        StringBuilder codeBuilder = new StringBuilder();
+//
+//        return codeStream.doOnNext(chunk -> {
+//            if (chunk != null) { // 防止 null chunk
+//                codeBuilder.append(chunk);
+//            }
+//        }).doOnComplete(() -> {
+//            String completeCode = codeBuilder.toString();
+//
+//            // 【关键修复】增加内容校验
+//            if (completeCode == null || completeCode.trim().isEmpty()) {
+//                log.error("❌ 保存失败: 接收到的代码流为空！可能是上游 AI 未返回有效内容或流被截断。");
+//                return;
+//            }
+//
+//            try {
+//                log.debug("准备解析代码，当前长度: {}", completeCode.length());
+//
+//                Object parsedResult = CodeParserExecutor.executeParser(completeCode, codeGenType);
+//
+//                // 【关键修复】检查解析结果
+//                if (parsedResult == null) {
+//                    log.error("❌ 保存失败: 代码解析器返回了 null。输入内容预览: {}", completeCode.substring(0, Math.min(100, completeCode.length())));
+//                    return;
+//                }
+//
+//                File savedDir = CodeFileSaverExecutor.executeSaver(parsedResult, codeGenType, appId);
+//                log.info("保存成功，路径为：" + savedDir.getAbsolutePath());
+//            } catch (Exception e) {
+//                // 【关键修复】打印完整异常栈
+//                log.error("❌ 保存过程发生异常: ", e);
+//            }
+//        });
+
+    }
     }
 
 
@@ -229,7 +318,7 @@ public class AiCodeGeneratorFacade {
 //                    } catch (Exception e) {
 //                        log.error("保存失败: {}", e.getMessage());
 //                    }
-//                });
-//    }
-
-}
+////                });
+////    }
+//
+//}
