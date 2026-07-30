@@ -1,5 +1,6 @@
 package com.huzi.huaicodemother.service;
 
+import com.huzi.huaicodemother.model.dto.app.AppAddRequest;
 import com.huzi.huaicodemother.model.dto.app.AppQueryRequest;
 import com.huzi.huaicodemother.model.entity.User;
 import com.huzi.huaicodemother.model.vo.AppVO;
@@ -19,6 +20,9 @@ import java.util.List;
 public interface AppService extends IService<App> {
 
 
+
+
+
     /**
      * 获取用户对话并生成代码
      *
@@ -29,6 +33,15 @@ public interface AppService extends IService<App> {
      */
     Flux<String> chatToGenCode(Long appId, String message, User loginUser);
     /**
+     * 创建应用
+     *
+     * @param appAddRequest 应用创建请求
+     * @param loginUser     当前登录用户
+     * @return 新应用 id
+     */
+    Long createApp(AppAddRequest appAddRequest, User loginUser);
+
+    /**
      * 应用部署
      *
      * @param appId 应用 id
@@ -36,7 +49,13 @@ public interface AppService extends IService<App> {
      * @return 可访问的部署地址
      */
     String deployApp(Long appId,User loginUser);
-
+    /**
+     * 异步生成应用截图
+     *
+     * @param appId 应用 id
+     * @param appUrl 应用地址
+     */
+    void generateAppScreenshotAsync(Long appId, String appUrl);
 
     /**
      * 获取脱敏后的应用信息
