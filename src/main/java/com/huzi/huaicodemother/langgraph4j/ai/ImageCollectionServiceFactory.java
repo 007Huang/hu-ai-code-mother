@@ -1,6 +1,6 @@
 package com.huzi.huaicodemother.langgraph4j.ai;
 
-import com.huzi.huaicodemother.langgraph4j.node.LogoGeneratorTool;
+import com.huzi.huaicodemother.langgraph4j.tools.LogoGeneratorTool;
 import com.huzi.huaicodemother.langgraph4j.tools.ImageSearchTool;
 import com.huzi.huaicodemother.langgraph4j.tools.MermaidDiagramTool;
 import com.huzi.huaicodemother.langgraph4j.tools.UndrawIllustrationTool;

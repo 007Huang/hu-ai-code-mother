@@ -1,4 +1,4 @@
-package com.huzi.huaicodemother.langgraph4j.node;
+package com.huzi.huaicodemother.langgraph4j.tools;
 
 import cn.hutool.core.util.StrUtil;
 import com.alibaba.dashscope.aigc.imagesynthesis.ImageSynthesis;

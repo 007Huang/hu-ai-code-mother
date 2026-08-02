@@ -2,6 +2,7 @@ package com.huzi.huaicodemother.langgraph4j.node;
 
 import com.huzi.huaicodemother.langgraph4j.model.ImageResource;
 import com.huzi.huaicodemother.langgraph4j.model.enums.ImageCategoryEnum;
+import com.huzi.huaicodemother.langgraph4j.tools.LogoGeneratorTool;
 import jakarta.annotation.Resource;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;

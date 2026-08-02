@@ -2,12 +2,11 @@ package com.huzi.huaicodemother.langgraph4j.node;
 
 import cn.hutool.core.date.StopWatch;
 import com.huzi.huaicodemother.langgraph4j.ai.ImageCollectionPlanService;
-import com.huzi.huaicodemother.langgraph4j.ai.ImageCollectionService;
 import com.huzi.huaicodemother.langgraph4j.model.ImageCollectionPlan;
 import com.huzi.huaicodemother.langgraph4j.model.ImageResource;
-import com.huzi.huaicodemother.langgraph4j.model.enums.ImageCategoryEnum;
 import com.huzi.huaicodemother.langgraph4j.state.WorkflowContext;
 import com.huzi.huaicodemother.langgraph4j.tools.ImageSearchTool;
+import com.huzi.huaicodemother.langgraph4j.tools.LogoGeneratorTool;
 import com.huzi.huaicodemother.langgraph4j.tools.MermaidDiagramTool;
 import com.huzi.huaicodemother.langgraph4j.tools.UndrawIllustrationTool;
 import com.huzi.huaicodemother.utils.SpringContextUtil;
@@ -16,7 +15,6 @@ import org.bsc.langgraph4j.action.AsyncNodeAction;
 import org.bsc.langgraph4j.prebuilt.MessagesState;
 
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 
