@@ -62,6 +62,7 @@ langchain4j:
       api-key: <Your API Key>
       model-name: deepseek-reasoner
       max-tokens: 32768
+      max-retries: 3 #修改重试次数 默认值是 2
       temperature: 0.1
       log-requests: true
       log-responses: true
