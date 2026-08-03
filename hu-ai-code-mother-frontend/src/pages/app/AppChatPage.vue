@@ -71,14 +71,8 @@
         <div class="input-container">
           <!-- 编辑模式下选中的元素信息 -->
           <div v-if="isEditMode && selectedElements.length > 0" class="selected-elements">
-            <a-alert
-              v-for="el in selectedElements"
-              :key="el.uid"
-              type="info"
-              closable
-              class="element-alert"
-              @close="handleRemoveElement(el.uid)"
-            >
+            <a-alert v-for="el in selectedElements" :key="el.uid" type="info" closable class="element-alert"
+              @close="handleRemoveElement(el.uid)">
               <template #message>
                 <span class="element-info">
                   <code>&lt;{{ el.tagName }}&gt;</code>
@@ -101,11 +95,8 @@
               @keydown.enter.prevent="sendMessage" :disabled="isGenerating" />
             <div class="input-actions">
               <a-tooltip :title="isEditMode ? '退出元素选择模式' : '进入元素选择模式'">
-                <a-button
-                  :type="isEditMode ? 'primary' : 'default'"
-                  @click="toggleEditMode"
-                  :disabled="!previewUrl || isGenerating || !isOwner"
-                >
+                <a-button :type="isEditMode ? 'primary' : 'default'" @click="toggleEditMode"
+                  :disabled="!previewUrl || isGenerating || !isOwner">
                   <template #icon>
                     <EditOutlined />
                   </template>
@@ -142,15 +133,8 @@
             <a-spin size="large" />
             <p>正在生成网站...</p>
           </div>
-          <iframe
-            v-else
-            ref="previewIframe"
-            :src="previewUrl"
-            class="preview-iframe"
-            :class="{ 'edit-mode': isEditMode }"
-            frameborder="0"
-            @load="onIframeLoad"
-          ></iframe>
+          <iframe v-else ref="previewIframe" :src="previewUrl" class="preview-iframe"
+            :class="{ 'edit-mode': isEditMode }" frameborder="0" @load="onIframeLoad"></iframe>
         </div>
       </div>
     </div>
@@ -524,6 +508,28 @@ const generateCode = async (userMessage: string, aiMessageIndex: number) => {
         await fetchAppInfo()
         updatePreview()
       }, 1000)
+    })
+    // 处理business-error事件（后端限流等错误）
+    eventSource.addEventListener('business-error', function (event: MessageEvent) {
+      if (streamCompleted) return
+
+      try {
+        const errorData = JSON.parse(event.data)
+        console.error('SSE业务错误事件:', errorData)
+
+        // 显示具体的错误信息
+        const errorMessage = errorData.message || '生成过程中出现错误'
+        messages.value[aiMessageIndex].content = `❌ ${errorMessage}`
+        messages.value[aiMessageIndex].loading = false
+        message.error(errorMessage)
+
+        streamCompleted = true
+        isGenerating.value = false
+        eventSource?.close()
+      } catch (parseError) {
+        console.error('解析错误事件失败:', parseError, '原始数据:', event.data)
+        handleError(new Error('服务器返回错误'), aiMessageIndex)
+      }
     })
 
     // 处理错误

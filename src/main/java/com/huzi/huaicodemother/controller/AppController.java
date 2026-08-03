@@ -18,6 +18,8 @@ import com.huzi.huaicodemother.model.entity.App;
 import com.huzi.huaicodemother.model.entity.User;
 import com.huzi.huaicodemother.model.enums.CodeGenTypeEnum;
 import com.huzi.huaicodemother.model.vo.AppVO;
+import com.huzi.huaicodemother.ratelimter.annotation.RateLimit;
+import com.huzi.huaicodemother.ratelimter.enums.RateLimitType;
 import com.huzi.huaicodemother.service.AppService;
 import com.huzi.huaicodemother.service.ProjectDownloadService;
 import com.huzi.huaicodemother.service.UserService;
@@ -26,6 +28,7 @@ import com.mybatisflex.core.query.QueryWrapper;
 import jakarta.annotation.Resource;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.http.MediaType;
 import org.springframework.http.codec.ServerSentEvent;
 import org.springframework.web.bind.annotation.*;
@@ -69,7 +72,9 @@ public class AppController {
      * @param request 请求对象
      * @return 生成结果流
      */
+    //每个用户在 60秒内最多只能发起5 次 AI 对‍‍话请求，超过限制会返回友好的错误提示‍
     @GetMapping(value = "/chat/gen/code", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    @RateLimit(limitType = RateLimitType.USER, rate = 5, rateInterval = 60, message = "AI 对话请求过于频繁，请稍后再试")
     public Flux<ServerSentEvent<String>> chatToGenCode(@RequestParam Long appId,
                                                        @RequestParam String message,
                                                        HttpServletRequest request) {
@@ -376,7 +381,25 @@ public class AppController {
      * @param appQueryRequest 查询请求
      * @return 精选应用列表
      */
+//    这里使用了 SpEL（Spring Expression Language）表达式：
+//
+//    T(类名)：用于调用静态方法，生成缓存 key
+//#参数名：用于引用方法参数
+//    condition：设置缓存条件，只有前 10 页才会被缓存
+//💡 建议了解下缓存注解的工作原理，执行流程如下：AH+EMPcWDeoPtEXvMXn4p2OujqG9e2R1rS1c+cTEDUk=
+//
+//    方法执行前：Spring 根据 key 表达式生成缓存键
+//    缓存检查：检查 Redis 中是否存在该键对应的缓存数据
+//    缓存命中：如果存在且未过期，直接返回缓存数据，不执行方法
+//    缓存未命中：如果不存在，执行方法获取结果，并将结果存储到 Redis 中
+//    返回结果：返回方法执行结果
+
     @PostMapping("/good/list/page/vo")
+    @Cacheable(
+            value = "good_app_page",
+            key = "T(com.huzi.huaicodemother.utils.CacheKeyUtils).generateKey(#appQueryRequest)",
+            condition = "#appQueryRequest.pageNum <= 10"
+    )
     public BaseResponse<Page<AppVO>> listGoodAppVOByPage(@RequestBody AppQueryRequest appQueryRequest) {
         ThrowUtils.throwIf(appQueryRequest == null, ErrorCode.PARAMS_ERROR);
         // 限制每页最多 20 个
