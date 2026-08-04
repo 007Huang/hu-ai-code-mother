@@ -31,6 +31,7 @@ import com.huzi.huaicodemother.mapper.AppMapper;
 import com.huzi.huaicodemother.service.AppService;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
 
@@ -52,6 +53,8 @@ import java.util.stream.Collectors;
 @Service
 @Slf4j
 public class AppServiceImpl extends ServiceImpl<AppMapper, App> implements AppService {
+    @Value("${code.deploy-host:http://localhost}")
+    private String deployHost;
     @Resource
     private UserService userService;
     @Resource
@@ -173,8 +176,10 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App> implements AppSe
         updateApp.setDeployedTime(LocalDateTime.now());
         boolean updateResult = this.updateById(updateApp);//操作数据库
         ThrowUtils.throwIf(!updateResult, ErrorCode.OPERATION_ERROR, "更新应用部署信息失败");
-        //10.返回可访问的 URL
-        String appDeployUrl = String.format("%s/%s", AppConstant.CODE_DEPLOY_HOST, deployKey);
+        //10.返回可访问的 URL 本地访问地址
+       // String appDeployUrl = String.format("%s/%s", AppConstant.CODE_DEPLOY_HOST, deployKey);
+        // 10. 构建应用访问 URL 服务器访问地址
+        String appDeployUrl = String.format("%s/%s/", deployHost, deployKey);
         //11.异步生成截图并且更新应用封面
         generateAppScreenshotAsync(appId, appDeployUrl);
         return appDeployUrl;
