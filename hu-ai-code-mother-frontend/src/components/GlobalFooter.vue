@@ -4,7 +4,7 @@
       <p class="copyright">
         <a href="https://github.com/007Huang/hu-ai-code-mother" target="_blank" rel="noopener noreferrer"
           class="author-link">
-          GitHub项目源码 by Huang
+          Github项目源码 by Huang
         </a>
       </p>
     </div>

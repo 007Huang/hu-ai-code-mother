@@ -79,8 +79,8 @@ const originItems = [
   },
   {
     key: 'others',
-    label: h('a', { href: 'https://github.com/007Huang/hu-ai-code-mother', target: '_blank' }, 'GitHub'),
-    title: 'GitHub',
+    label: h('a', { href: 'https://ai.qiyaov.com/', target: '_blank' }, '更多创作'),
+    title: '更多创作',
   },
 ]
 
