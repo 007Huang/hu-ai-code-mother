@@ -167,13 +167,8 @@ onMounted(() => {
 
       <!-- 用户提示词输入框 -->
       <div class="input-section">
-        <a-textarea
-          v-model:value="userPrompt"
-          placeholder="帮我创建个人博客网站"
-          :rows="4"
-          :maxlength="1000"
-          class="prompt-input"
-        />
+        <a-textarea v-model:value="userPrompt" placeholder="帮我创建个人备忘录页面" :rows="4" :maxlength="1000"
+          class="prompt-input" />
         <div class="input-actions">
           <a-button type="primary" size="large" @click="createApp" :loading="creating">
             <template #icon>
@@ -185,65 +180,58 @@ onMounted(() => {
 
       <!-- 快捷按钮 -->
       <div class="quick-actions">
-        <a-button
-          type="default"
-          @click="
-            setPrompt(
-              '创建一个现代化的个人博客网站，包含文章列表、详情页、分类标签、搜索功能、评论系统和个人简介页面。采用简洁的设计风格，支持响应式布局，文章支持Markdown格式，首页展示最新文章和热门推荐。',
-            )
-          "
-          >个人博客网站</a-button
-        >
-        <a-button
-          type="default"
-          @click="
-            setPrompt(
-              '设计一个专业的企业官网，包含公司介绍、产品服务展示、新闻资讯、联系我们等页面。采用商务风格的设计，包含轮播图、产品展示卡片、团队介绍、客户案例展示，支持多语言切换和在线客服功能。',
-            )
-          "
-          >企业官网</a-button
-        >
-        <a-button
-          type="default"
-          @click="
-            setPrompt(
-              '构建一个功能完整的在线商城，包含商品展示、购物车、用户注册登录、订单管理、支付结算等功能。设计现代化的商品卡片布局，支持商品搜索筛选、用户评价、优惠券系统和会员积分功能。',
-            )
-          "
-          >在线商城</a-button
-        >
-        <a-button
-          type="default"
-          @click="
-            setPrompt(
-              '制作一个精美的作品展示网站，适合设计师、摄影师、艺术家等创作者。包含作品画廊、项目详情页、个人简历、联系方式等模块。采用瀑布流或网格布局展示作品，支持图片放大预览和作品分类筛选。',
-            )
-          "
-          >作品展示网站</a-button
-        >
+        <a-button type="default" @click="
+          setPrompt(
+            '做一个个人备忘录页面，支持添加备忘、标记完成、删除备忘，数据本地持久化，卡片式布局，柔和配色。',
+          )
+          ">📝 个人备忘录</a-button>
+        <a-button type="default" @click="
+          setPrompt(
+            '做一个个人记账本，支持添加收支记录（分类+金额+备注）、月度收支饼图统计、按分类筛选记录列表、本月余额概览卡片，数据本地持久化，简约卡片风格。',
+          )
+          ">💰 记账本</a-button>
+        <a-button type="default" @click="
+          setPrompt(
+            '创建一个现代化的个人博客网站，包含文章列表、详情页、分类标签、搜索功能、评论系统和个人简介页面。采用简洁的设计风格，支持响应式布局，文章支持Markdown格式，首页展示最新文章和热门推荐。',
+          )
+          ">🍅 个人博客网站</a-button>
+        <a-button type="default" @click="
+          setPrompt(
+            '做一个在线聊天室界面，左侧用户列表带在线状态，右侧气泡消息区分我和他人，底部输入栏带表情快捷选择，消息自动滚动到最新，微信风格配色。',
+          )
+          ">💬 聊天界面</a-button>
+        <a-button type="default" @click="
+          setPrompt(
+            '做一个数据仪表盘后台，需要总览仪表盘页、用户管理列表页、订单详情页三个页面。包含统计卡片、折线趋势图、环形占比图、数据表格，深色主题科技感风格。',
+          )
+          ">📊 数据仪表盘</a-button>
+        <a-button type="default" @click="
+          setPrompt(
+            '设计一个专业的企业官网，包含公司介绍、产品服务展示、新闻资讯、联系我们等页面。采用商务风格的设计，包含轮播图、产品展示卡片、团队介绍、客户案例展示，支持多语言切换和在线客服功能。',
+          )
+          ">✈️ 企业官网</a-button>
+        <a-button type="default" @click="
+          setPrompt(
+            '构建一个电商管理系统，包含用户管理、商品管理、订单管理，需要路由和状态管理等功能。',
+          )
+          ">🛒 在线商城</a-button>
+        <a-button type="default" @click="
+          setPrompt(
+            '制作一个精美的作品展示网站，适合设计师、摄影师、艺术家等创作者。包含作品画廊、项目详情页、个人简历、联系方式等模块。采用瀑布流或网格布局展示作品，支持图片放大预览和作品分类筛选。',
+          )
+          ">🎨 作品集展示</a-button>
       </div>
 
       <!-- 我的作品 -->
       <div class="section">
         <h2 class="section-title">我的作品</h2>
         <div class="app-grid">
-          <AppCard
-            v-for="app in myApps"
-            :key="app.id"
-            :app="app"
-            @view-chat="viewChat"
-            @view-work="viewWork"
-          />
+          <AppCard v-for="app in myApps" :key="app.id" :app="app" @view-chat="viewChat" @view-work="viewWork" />
         </div>
         <div class="pagination-wrapper">
-          <a-pagination
-            v-model:current="myAppsPage.current"
-            v-model:page-size="myAppsPage.pageSize"
-            :total="myAppsPage.total"
-            :show-size-changer="false"
-            :show-total="(total: number) => `共 ${total} 个应用`"
-            @change="loadMyApps"
-          />
+          <a-pagination v-model:current="myAppsPage.current" v-model:page-size="myAppsPage.pageSize"
+            :total="myAppsPage.total" :show-size-changer="false" :show-total="(total: number) => `共 ${total} 个应用`"
+            @change="loadMyApps" />
         </div>
       </div>
 
@@ -251,24 +239,13 @@ onMounted(() => {
       <div class="section">
         <h2 class="section-title">精选案例</h2>
         <div class="featured-grid">
-          <AppCard
-            v-for="app in featuredApps"
-            :key="app.id"
-            :app="app"
-            :featured="true"
-            @view-chat="viewChat"
-            @view-work="viewWork"
-          />
+          <AppCard v-for="app in featuredApps" :key="app.id" :app="app" :featured="true" @view-chat="viewChat"
+            @view-work="viewWork" />
         </div>
         <div class="pagination-wrapper">
-          <a-pagination
-            v-model:current="featuredAppsPage.current"
-            v-model:page-size="featuredAppsPage.pageSize"
-            :total="featuredAppsPage.total"
-            :show-size-changer="false"
-            :show-total="(total: number) => `共 ${total} 个案例`"
-            @change="loadFeaturedApps"
-          />
+          <a-pagination v-model:current="featuredAppsPage.current" v-model:page-size="featuredAppsPage.pageSize"
+            :total="featuredAppsPage.total" :show-size-changer="false" :show-total="(total: number) => `共 ${total} 个案例`"
+            @change="loadFeaturedApps" />
         </div>
       </div>
     </div>
@@ -321,12 +298,10 @@ onMounted(() => {
   right: 0;
   bottom: 0;
   background:
-    radial-gradient(
-      600px circle at var(--mouse-x, 50%) var(--mouse-y, 50%),
+    radial-gradient(600px circle at var(--mouse-x, 50%) var(--mouse-y, 50%),
       rgba(59, 130, 246, 0.08) 0%,
       rgba(139, 92, 246, 0.06) 40%,
-      transparent 80%
-    ),
+      transparent 80%),
     linear-gradient(45deg, transparent 30%, rgba(59, 130, 246, 0.04) 50%, transparent 70%),
     linear-gradient(-45deg, transparent 30%, rgba(139, 92, 246, 0.04) 50%, transparent 70%);
   pointer-events: none;
@@ -334,10 +309,12 @@ onMounted(() => {
 }
 
 @keyframes gridFloat {
+
   0%,
   100% {
     transform: translate(0, 0);
   }
+
   50% {
     transform: translate(5px, 5px);
   }
@@ -347,6 +324,7 @@ onMounted(() => {
   0% {
     opacity: 0.3;
   }
+
   100% {
     opacity: 0.7;
   }
@@ -393,6 +371,7 @@ onMounted(() => {
     opacity: 0.6;
     transform: scale(1);
   }
+
   100% {
     opacity: 1;
     transform: scale(1.02);
@@ -403,6 +382,7 @@ onMounted(() => {
   0% {
     transform: translate(-50%, -50%) rotate(0deg);
   }
+
   100% {
     transform: translate(-50%, -50%) rotate(360deg);
   }
@@ -424,10 +404,12 @@ onMounted(() => {
 }
 
 @keyframes titleShimmer {
+
   0%,
   100% {
     background-position: 0% 50%;
   }
+
   50% {
     background-position: 100% 50%;
   }
