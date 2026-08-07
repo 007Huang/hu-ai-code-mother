@@ -21,6 +21,8 @@ import com.huzi.huaicodemother.model.enums.ChatHistoryMessageTypeEnum;
 import com.huzi.huaicodemother.model.enums.CodeGenTypeEnum;
 import com.huzi.huaicodemother.model.vo.AppVO;
 import com.huzi.huaicodemother.model.vo.UserVO;
+import com.huzi.huaicodemother.monitor.MonitorContext;
+import com.huzi.huaicodemother.monitor.MonitorContextHolder;
 import com.huzi.huaicodemother.service.ChatHistoryService;
 import com.huzi.huaicodemother.service.ScreenshotService;
 import com.huzi.huaicodemother.service.UserService;
@@ -91,12 +93,22 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App> implements AppSe
         CodeGenTypeEnum codeGenTypeEnum = CodeGenTypeEnum.getEnumByValue(codeGenType);
         //5.先保存用户消息到数据库
         chatHistoryService.addChatMessage(appId, message, ChatHistoryMessageTypeEnum.USER.getValue(),loginUser.getId());
-
-        //6。调用AI生成代码
+        //6.设置监控上下文
+        MonitorContextHolder.setContext(
+                MonitorContext.builder()
+                        .userId(loginUser.getId().toString())
+                        .appId(appId.toString())
+                        .build()
+        );
+        //7。调用AI生成代码
         Flux<String> codeStream = aiCodeGeneratorFacade.generateAndSaveCodeStream(message, codeGenTypeEnum, appId);
 //                .subscribe(System.out::println);
-        //7.收集AI响应的内容，并且在完成对话后保存记录到对话历史
-        return streamHandlerExecutor.doExecute(codeStream, chatHistoryService, appId, loginUser, codeGenTypeEnum);
+        //8.收集AI响应的内容，并且在完成对话后保存记录到对话历史
+        return streamHandlerExecutor.doExecute(codeStream, chatHistoryService, appId, loginUser, codeGenTypeEnum)
+                .doFinally(signalType -> {
+                    // 流结束时清理（无论成功/失败/取消）
+                    MonitorContextHolder.clearContext();
+                });
     }
 
     @Override

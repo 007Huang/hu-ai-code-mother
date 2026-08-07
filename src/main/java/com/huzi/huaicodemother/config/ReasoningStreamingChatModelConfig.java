@@ -1,14 +1,18 @@
 package com.huzi.huaicodemother.config;
 
+import com.huzi.huaicodemother.monitor.AiModelMonitorListener;
 import dev.langchain4j.http.client.HttpClientBuilder;
 import dev.langchain4j.model.chat.StreamingChatModel;
 import dev.langchain4j.model.openai.OpenAiStreamingChatModel;
+import jakarta.annotation.Resource;
 import lombok.Data;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Scope;
+
+import java.util.List;
 
 /**
  * 推理专用流式模型配置
@@ -18,6 +22,8 @@ import org.springframework.context.annotation.Scope;
 @Data
 public class ReasoningStreamingChatModelConfig {
 
+    @Resource
+    private AiModelMonitorListener aiModelMonitorListener;
     private String baseUrl;
 
     private String apiKey;
@@ -45,6 +51,7 @@ public class ReasoningStreamingChatModelConfig {
                 .logRequests(logRequests)
                 .logResponses(logResponses)
                 .httpClientBuilder(httpClientBuilder)
+                .listeners(List.of(aiModelMonitorListener))
                 .build();
     }
 }

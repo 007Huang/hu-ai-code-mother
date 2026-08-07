@@ -1,8 +1,11 @@
 package com.huzi.huaicodemother.config;
 
+import com.huzi.huaicodemother.monitor.AiModelMonitorListener;
 import dev.langchain4j.http.client.HttpClientBuilder;
 import dev.langchain4j.model.chat.StreamingChatModel;
+import dev.langchain4j.model.chat.listener.ChatModelListener;
 import dev.langchain4j.model.openai.OpenAiStreamingChatModel;
+import jakarta.annotation.Resource;
 import lombok.Data;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.context.properties.ConfigurationProperties;
@@ -10,6 +13,8 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Scope;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
+
+import java.util.List;
 
 /**
  * 通用流式聊天模型配置
@@ -19,6 +24,8 @@ import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 @Data
 public class StreamingChatModelConfig {
 
+    @Resource
+    private AiModelMonitorListener aiModelMonitorListener;
     private String baseUrl;
 
     private String apiKey;
@@ -56,6 +63,7 @@ public class StreamingChatModelConfig {
                 .logRequests(logRequests)
                 .logResponses(logResponses)
                 .httpClientBuilder(httpClientBuilder)
+                .listeners(List.of(aiModelMonitorListener))
                 .build();
     }
 }
