@@ -195,7 +195,6 @@ hu-ai-code-mother/
 │   └── utils/                       # 工具类
 ├── src/main/resources/
 │   ├── application.yml              # 主配置文件（含占位符，可直接修改）
-│   ├── application-local.yml        # 本地环境覆盖配置
 │   └── application-prod-sample.yml  # 生产环境配置模板
 ├── prometheus.yml                   # Prometheus 采集配置
 └── pom.xml                          # Maven 项目配置
