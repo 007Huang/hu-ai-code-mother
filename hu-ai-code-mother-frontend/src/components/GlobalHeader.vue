@@ -78,9 +78,15 @@ const originItems = [
     title: '应用管理',
   },
   {
-    key: 'others',
+    // key: 'others',
+    key: 'more-creation',
     label: h('a', { href: 'https://ai.qiyaov.com/', target: '_blank' }, '更多创作'),
     title: '更多创作',
+  },
+  {
+    key: 'api-platform',
+    label: h('a', { href: 'https://platform.qiyaov.com/', target: '_blank' }, 'API服务平台'),
+    title: 'API服务平台',
   },
 ]
 
