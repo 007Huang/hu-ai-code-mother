@@ -9,9 +9,9 @@ spring:
   # mysql
   datasource:
     driver-class-name: com.mysql.cj.jdbc.Driver
-    url: jdbc:mysql://localhost:3306/yu_ai_code_mother
+    url: jdbc:mysql://localhost:3306/hu_ai_code_mother
     username: root
-    password: 123456
+    password: huang67.
   # redis
   data:
     redis:
@@ -66,9 +66,26 @@ langchain4j:
 springdoc:
   group-configs:
     - group: 'default'
-      packages-to-scan: com.yupi.yuaicodemother.controller
+      packages-to-scan: com.huzi.huaicodemother.controller
 # knife4j
 knife4j:
   enable: true
   setting:
     language: zh_cn
+
+
+# Dubbo
+dubbo:
+  registry:
+    address: nacos://127.0.0.1:8848?username=nacos&password=nacos
+    register-mode: instance
+  application:
+    qos-enable: true
+    qos-port: 0 # 设置为 0，系统会自动找一个空闲端口
+  protocol:
+    name: tri
+    port: 50053
+  consumer:
+    timeout: 120000
+  provider:
+    timeout: 120000

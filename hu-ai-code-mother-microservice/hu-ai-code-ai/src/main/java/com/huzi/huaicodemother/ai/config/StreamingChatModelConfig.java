@@ -23,7 +23,7 @@ import java.util.List;
 @Data
 public class StreamingChatModelConfig {
 
-    @Resource
+//    @Resource
 //    private AiModelMonitorListener aiModelMonitorListener;
     private String baseUrl;
 

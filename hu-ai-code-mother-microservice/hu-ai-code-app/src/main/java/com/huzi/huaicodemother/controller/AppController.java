@@ -28,6 +28,7 @@ import com.mybatisflex.core.query.QueryWrapper;
 import jakarta.annotation.Resource;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import org.apache.dubbo.config.annotation.DubboReference;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.http.MediaType;
@@ -54,8 +55,9 @@ public class AppController {
     @Resource
     private AppService appService;
 
-    @Resource
-    @Lazy
+//    @Resource
+//    @Lazy
+    @DubboReference
     private InnerUserService userService;
     @Resource
     private ProjectDownloadService projectDownloadService;
@@ -399,8 +401,8 @@ public class AppController {
     @PostMapping("/good/list/page/vo")
     @Cacheable(
             value = "good_app_page",
-            key = "T(com.huzi.huaicodemother.utils.CacheKeyUtils).generateKey(#appQueryRequest)",
-            condition = "#appQueryRequest.pageNum <= 10"
+            key = "T(com.huzi.huaicodemother.utils.CacheKeyUtils).generateKey(#appQueryRequest)"
+           // condition = "#appQueryRequest.pageNum <= 10"
     )
     public BaseResponse<Page<AppVO>> listGoodAppVOByPage(@RequestBody AppQueryRequest appQueryRequest) {
         ThrowUtils.throwIf(appQueryRequest == null, ErrorCode.PARAMS_ERROR);
