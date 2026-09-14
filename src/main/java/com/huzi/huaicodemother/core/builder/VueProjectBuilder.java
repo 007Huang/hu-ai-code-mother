@@ -1,152 +1,223 @@
 package com.huzi.huaicodemother.core.builder;
 
-import cn.hutool.core.util.RuntimeUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
 import java.io.File;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.attribute.FileTime;
+import java.security.MessageDigest;
+import java.util.HexFormat;
+import java.util.List;
 import java.util.concurrent.TimeUnit;
 
 /**
- * Vue项目构建器
+ * Vue 项目构建器。
  */
 @Slf4j
 @Component
 public class VueProjectBuilder {
 
+    private static final String PACKAGE_FILE = "package.json";
+    private static final String LOCK_FILE = "package-lock.json";
+    private static final String NODE_MODULES_DIR = "node_modules";
+    private static final String DEPENDENCY_FINGERPRINT_FILE = ".hu-ai-dependencies.sha256";
+    private static final int INSTALL_TIMEOUT_SECONDS = 300;
+    private static final int BUILD_TIMEOUT_SECONDS = 180;
+
     /**
-     * 异步构建项目（不阻塞主流程）
-     *
-     * @param projectPath 项目路径
-     */
-    public void buildProjectAsync(String projectPath) {
-        // 在单独的线程中执行构建，避免阻塞主流程
-        Thread.ofVirtual().name("vue-builder-" + System.currentTimeMillis()).start(() -> {
-            try {
-                buildProject(projectPath);
-            } catch (Exception e) {
-                log.error("异步构建 Vue 项目时发生异常: {}", e.getMessage(), e);
-            }
-        });
-    }
-    /**
-     * 构建 Vue 项目
+     * 构建 Vue 项目。
      *
      * @param projectPath 项目根目录路径
      * @return 是否构建成功
      */
     public boolean buildProject(String projectPath) {
-
         File projectDir = new File(projectPath);
-        if (!projectDir.exists() || !projectDir.isDirectory()) {
+        if (!projectDir.isDirectory()) {
             log.error("项目目录不存在: {}", projectPath);
             return false;
         }
-        // 检查 package.json 是否存在
-        File packageJson = new File(projectDir, "package.json");
-        if (!packageJson.exists()) {
+
+        File packageJson = new File(projectDir, PACKAGE_FILE);
+        if (!packageJson.isFile()) {
             log.error("package.json 文件不存在: {}", packageJson.getAbsolutePath());
             return false;
         }
+
         log.info("开始构建 Vue 项目: {}", projectPath);
-        // 执行 npm install
-        if (!executeNpmInstall(projectDir)) {
-            log.error("npm install 执行失败");
+        String dependencyFingerprint;
+        try {
+            dependencyFingerprint = calculateDependencyFingerprint(projectDir.toPath());
+        } catch (Exception e) {
+            log.error("计算依赖指纹失败: {}", e.getMessage(), e);
             return false;
         }
-        // 执行 npm run build
-        if (!executeNpmBuild(projectDir)) {
+
+        if (!dependenciesAreReady(projectDir.toPath(), dependencyFingerprint)) {
+            if (!installDependencies(projectDir, dependencyFingerprint)) {
+                return false;
+            }
+        } else {
+            log.info("依赖声明未变化，跳过 npm install");
+        }
+
+        Path indexFile = projectDir.toPath().resolve("dist").resolve("index.html");
+        if (!markExistingBuildOutput(indexFile)) {
+            return false;
+        }
+        if (!executeCommand(projectDir, npmCommand("run", "build"), BUILD_TIMEOUT_SECONDS)) {
             log.error("npm run build 执行失败");
             return false;
         }
-        // 验证 dist 目录是否生成
-        File distDir = new File(projectDir, "dist");
-        if (!distDir.exists()) {
-            log.error("构建完成但 dist 目录未生成: {}", distDir.getAbsolutePath());
+
+        if (!isFreshBuildOutput(indexFile)) {
+            log.error("构建完成但未生成新的 dist/index.html: {}", indexFile.toAbsolutePath());
             return false;
         }
-        log.info("Vue 项目构建成功，dist 目录: {}", distDir.getAbsolutePath());
+
+        log.info("Vue 项目构建成功，入口文件: {}", indexFile.toAbsolutePath());
         return true;
     }
 
-
-
-    /**
-     * 执行 npm install 命令
-     */
-    private boolean executeNpmInstall(File projectDir) {
-        log.info("执行 npm install...");
-        String command = String.format("%s install", buildCommand("npm"));
-        return executeCommand(projectDir, command, 300); // 5分钟超时
-    }
-
-    /**
-     * 执行 npm run build 命令
-     */
-    private boolean executeNpmBuild(File projectDir) {
-        log.info("执行 npm run build...");
-        String command = String.format("%s run build", buildCommand("npm"));
-        return executeCommand(projectDir, command, 180); // 3分钟超时
-    }
-
-    /**
-     * 根据操作系统构建命令
-     *
-     * @param baseCommand 命令基础部分
-     * @return 完整的命令字符串
-     */
-    private String buildCommand(String baseCommand) {
-        if (isWindows()) {
-            return baseCommand + ".cmd";
+    private boolean installDependencies(File projectDir, String dependencyFingerprint) {
+        Path marker = dependencyMarker(projectDir.toPath());
+        try {
+            Files.deleteIfExists(marker);
+        } catch (IOException e) {
+            log.warn("删除旧依赖指纹失败，将继续安装: {}", e.getMessage());
         }
-        return baseCommand;
+
+        log.info("依赖声明发生变化，执行 npm install...");
+        if (!executeCommand(projectDir, npmCommand("install"), INSTALL_TIMEOUT_SECONDS)) {
+            log.error("npm install 执行失败");
+            return false;
+        }
+
+        try {
+            // npm install 可能创建或更新 package-lock.json，使用安装完成后的最终声明计算指纹。
+            String installedFingerprint = calculateDependencyFingerprint(projectDir.toPath());
+            Files.createDirectories(marker.getParent());
+            Files.writeString(marker, installedFingerprint, StandardCharsets.UTF_8);
+        } catch (Exception e) {
+            // 指纹只用于后续跳过安装，写入失败不应否定本次已成功安装的依赖。
+            log.warn("写入依赖指纹失败，下次构建将重新安装依赖: {}", e.getMessage());
+        }
+        return true;
     }
-    /**
-     * 判断当前操作系统是否为 Windows
-     *
-     * @return true 表示当前操作系统为 Windows，false 表示当前操作系统为 Linux 或 MacOS
-     */
+
+    boolean dependenciesAreReady(Path projectDir, String expectedFingerprint) {
+        Path nodeModules = projectDir.resolve(NODE_MODULES_DIR);
+        Path marker = dependencyMarker(projectDir);
+        Path viteExecutable = nodeModules.resolve(".bin").resolve(isWindows() ? "vite.cmd" : "vite");
+        if (!Files.isDirectory(nodeModules)
+                || !Files.isRegularFile(marker)
+                || !Files.isRegularFile(viteExecutable)) {
+            return false;
+        }
+        try {
+            return expectedFingerprint.equals(Files.readString(marker, StandardCharsets.UTF_8).trim());
+        } catch (IOException e) {
+            log.warn("读取依赖指纹失败，将重新安装依赖: {}", e.getMessage());
+            return false;
+        }
+    }
+
+    String calculateDependencyFingerprint(Path projectDir) throws Exception {
+        MessageDigest digest = MessageDigest.getInstance("SHA-256");
+        updateDigest(digest, projectDir.resolve(PACKAGE_FILE));
+        Path lockFile = projectDir.resolve(LOCK_FILE);
+        if (Files.isRegularFile(lockFile)) {
+            updateDigest(digest, lockFile);
+        }
+        return HexFormat.of().formatHex(digest.digest());
+    }
+
+    private void updateDigest(MessageDigest digest, Path file) throws IOException {
+        digest.update(file.getFileName().toString().getBytes(StandardCharsets.UTF_8));
+        digest.update((byte) 0);
+        digest.update(Files.readAllBytes(file));
+        digest.update((byte) 0);
+    }
+
+    private Path dependencyMarker(Path projectDir) {
+        return projectDir.resolve(NODE_MODULES_DIR).resolve(DEPENDENCY_FINGERPRINT_FILE);
+    }
+
+    private boolean markExistingBuildOutput(Path indexFile) {
+        if (!Files.isRegularFile(indexFile)) {
+            return true;
+        }
+        try {
+            Files.setLastModifiedTime(indexFile, FileTime.fromMillis(0));
+            return true;
+        } catch (IOException e) {
+            log.error("标记旧构建产物失败: {}", e.getMessage(), e);
+            return false;
+        }
+    }
+
+    boolean isFreshBuildOutput(Path indexFile) {
+        if (!Files.isRegularFile(indexFile)) {
+            return false;
+        }
+        try {
+            return Files.getLastModifiedTime(indexFile).toMillis() > 0;
+        } catch (IOException e) {
+            log.warn("读取构建产物时间失败: {}", e.getMessage());
+            return false;
+        }
+    }
+
+    private List<String> npmCommand(String... arguments) {
+        String executable = isWindows() ? "npm.cmd" : "npm";
+        java.util.ArrayList<String> command = new java.util.ArrayList<>();
+        command.add(executable);
+        command.addAll(List.of(arguments));
+        return command;
+    }
+
     private boolean isWindows() {
         return System.getProperty("os.name").toLowerCase().contains("windows");
     }
 
-
-
     /**
-     * 执行命令
-     *
-     * @param workingDir     工作目录
-     * @param command        命令字符串
-     * @param timeoutSeconds 超时时间（秒）
-     * @return 是否执行成功
+     * 执行 npm 命令。protected 便于使用无外部进程的单元测试覆盖构建流程。
      */
-    private boolean executeCommand(File workingDir, String command, int timeoutSeconds) {
+    protected boolean executeCommand(File workingDir, List<String> command, int timeoutSeconds) {
+        Process process = null;
         try {
-            log.info("在目录 {} 中执行命令: {}", workingDir.getAbsolutePath(), command);
-            Process process = RuntimeUtil.exec(
-                    null,
-                    workingDir,
-                    command.split("\\s+") // 命令分割为数组
-            );
-            // 等待进程完成，设置超时
+            log.info("在目录 {} 中执行命令: {}", workingDir.getAbsolutePath(), String.join(" ", command));
+            process = new ProcessBuilder(command)
+                    .directory(workingDir)
+                    .redirectErrorStream(true)
+                    .redirectOutput(ProcessBuilder.Redirect.INHERIT)
+                    .start();
             boolean finished = process.waitFor(timeoutSeconds, TimeUnit.SECONDS);
             if (!finished) {
-                log.error("命令执行超时（{}秒），强制终止进程", timeoutSeconds);
-                process.destroyForcibly();
+                log.error("命令执行超时（{}秒），强制终止进程树", timeoutSeconds);
+                destroyProcessTree(process);
                 return false;
             }
             int exitCode = process.exitValue();
-            if (exitCode == 0) {
-                log.info("命令执行成功: {}", command);
-                return true;
-            } else {
+            if (exitCode != 0) {
                 log.error("命令执行失败，退出码: {}", exitCode);
                 return false;
             }
+            return true;
         } catch (Exception e) {
-            log.error("执行命令失败: {}, 错误信息: {}", command, e.getMessage());
+            log.error("执行命令失败: {}, 错误信息: {}", String.join(" ", command), e.getMessage(), e);
+            if (process != null && process.isAlive()) {
+                destroyProcessTree(process);
+            }
             return false;
         }
     }
 
+    private void destroyProcessTree(Process process) {
+        process.descendants().forEach(ProcessHandle::destroyForcibly);
+        process.destroyForcibly();
+    }
 }

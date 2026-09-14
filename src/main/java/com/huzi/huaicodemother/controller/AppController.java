@@ -17,6 +17,7 @@ import com.huzi.huaicodemother.model.dto.app.*;
 import com.huzi.huaicodemother.model.entity.App;
 import com.huzi.huaicodemother.model.entity.User;
 import com.huzi.huaicodemother.model.enums.CodeGenTypeEnum;
+import com.huzi.huaicodemother.model.sse.AppStreamEvent;
 import com.huzi.huaicodemother.model.vo.AppVO;
 import com.huzi.huaicodemother.ratelimter.annotation.RateLimit;
 import com.huzi.huaicodemother.ratelimter.enums.RateLimitType;
@@ -36,6 +37,7 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 import java.io.File;
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
@@ -84,25 +86,60 @@ public class AppController {
         // 获取当前登录用户
         User loginUser = userService.getLoginUser(request);
         // 调用服务生成代码（流式）
-        Flux<String> contentFlux = appService.chatToGenCode(appId, message, loginUser);
-        // 转换为 ServerSentEvent 格式
-        return contentFlux
-                .map(chunk -> {
-                    // 将内容包装成JSON对象
-                    Map<String, String> wrapper = Map.of("d", chunk);
-                    String jsonData = JSONUtil.toJsonStr(wrapper);
-                    return ServerSentEvent.<String>builder()
-                            .data(jsonData)
-                            .build();
-                })
-                .concatWith(Mono.just(
-                        // 发送结束事件
-                        ServerSentEvent.<String>builder()
-                                .event("done")
-                                .data("")
-                                .build()
-                ));
+        Flux<AppStreamEvent> appStream = appService.chatToGenCode(appId, message, loginUser);
+        Flux<ServerSentEvent<String>> responseStream = appStream
+                .map(this::toServerSentEvent)
+                .concatWith(Mono.just(ServerSentEvent.<String>builder()
+                        .event("done")
+                        .data("")
+                        .build()))
+                .onErrorResume(error -> Mono.just(toBusinessErrorEvent(error)));
+        // 构建期间可能长时间没有业务消息，通过注释心跳保持连接，不触发前端 message 事件。
+        return responseStream.publish(shared -> {
+            Flux<ServerSentEvent<String>> heartbeat = Flux.interval(Duration.ofSeconds(15))
+                    .map(ignored -> ServerSentEvent.<String>builder().comment("heartbeat").build())
+                    .takeUntilOther(shared.ignoreElements());
+            return Flux.merge(shared, heartbeat);
+        });
     }
+
+    private ServerSentEvent<String> toServerSentEvent(AppStreamEvent streamEvent) {
+        if (streamEvent.type() == AppStreamEvent.Type.PHASE) {
+            String data = JSONUtil.toJsonStr(Map.of(
+                    "phase", streamEvent.phase(),
+                    "message", streamEvent.data()
+            ));
+            return ServerSentEvent.<String>builder()
+                    .event("phase")
+                    .data(data)
+                    .build();
+        }
+        String data = JSONUtil.toJsonStr(Map.of("d", streamEvent.data()));
+        return ServerSentEvent.<String>builder().data(data).build();
+    }
+
+    private ServerSentEvent<String> toBusinessErrorEvent(Throwable error) {
+        Throwable actualError = error;
+        while (actualError.getCause() != null && actualError != actualError.getCause()) {
+            actualError = actualError.getCause();
+        }
+        int errorCode = ErrorCode.SYSTEM_ERROR.getCode();
+        String errorMessage = "生成过程中出现错误，请稍后重试";
+        if (actualError instanceof BusinessException businessException) {
+            errorCode = businessException.getCode();
+            errorMessage = businessException.getMessage();
+        }
+        String data = JSONUtil.toJsonStr(Map.of(
+                "error", true,
+                "code", errorCode,
+                "message", errorMessage
+        ));
+        return ServerSentEvent.<String>builder()
+                .event("business-error")
+                .data(data)
+                .build();
+    }
+
     /**
      * 应用部署
      *

@@ -19,6 +19,7 @@ import com.huzi.huaicodemother.model.dto.app.AppQueryRequest;
 import com.huzi.huaicodemother.model.entity.User;
 import com.huzi.huaicodemother.model.enums.ChatHistoryMessageTypeEnum;
 import com.huzi.huaicodemother.model.enums.CodeGenTypeEnum;
+import com.huzi.huaicodemother.model.sse.AppStreamEvent;
 import com.huzi.huaicodemother.model.vo.AppVO;
 import com.huzi.huaicodemother.model.vo.UserVO;
 import com.huzi.huaicodemother.monitor.MonitorContext;
@@ -34,8 +35,11 @@ import com.huzi.huaicodemother.service.AppService;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.task.TaskExecutor;
+import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
 
 import java.io.File;
 import java.io.Serializable;
@@ -44,6 +48,9 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.CancellationException;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.FutureTask;
 import java.util.stream.Collectors;
 
 /**
@@ -67,6 +74,8 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App> implements AppSe
     private StreamHandlerExecutor streamHandlerExecutor;
     @Resource
     private VueProjectBuilder vueProjectBuilder;
+    @Resource(name = "vueProjectBuildTaskExecutor")
+    private TaskExecutor vueProjectBuildTaskExecutor;
     @Resource
     private ScreenshotService screenshotService;
     @Resource
@@ -78,7 +87,7 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App> implements AppSe
 
 
     @Override
-    public Flux<String> chatToGenCode(Long appId, String message, User loginUser) {
+    public Flux<AppStreamEvent> chatToGenCode(Long appId, String message, User loginUser) {
         // 1.校验参数
         ThrowUtils.throwIf(appId == null || appId <= 0, ErrorCode.PARAMS_ERROR, "应用 ID 不合法");
         ThrowUtils.throwIf(StrUtil.isBlank(message), ErrorCode.PARAMS_ERROR, "请输入对话内容");
@@ -103,12 +112,61 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App> implements AppSe
         //7。调用AI生成代码
         Flux<String> codeStream = aiCodeGeneratorFacade.generateAndSaveCodeStream(message, codeGenTypeEnum, appId);
 //                .subscribe(System.out::println);
-        //8.收集AI响应的内容，并且在完成对话后保存记录到对话历史
-        return streamHandlerExecutor.doExecute(codeStream, chatHistoryService, appId, loginUser, codeGenTypeEnum)
-                .doFinally(signalType -> {
-                    // 流结束时清理（无论成功/失败/取消）
-                    MonitorContextHolder.clearContext();
-                });
+        //8.收集 AI 响应内容，并在完成对话后保存记录到对话历史
+        Flux<AppStreamEvent> responseStream = streamHandlerExecutor
+                .doExecute(codeStream, chatHistoryService, appId, loginUser, codeGenTypeEnum)
+                .map(AppStreamEvent::content);
+        if (codeGenTypeEnum == CodeGenTypeEnum.VUE_PROJECT) {
+            responseStream = responseStream.concatWith(buildVueProject(appId));
+        }
+        return responseStream.doFinally(signalType -> {
+            // 流结束时清理（无论成功/失败/取消）
+            MonitorContextHolder.clearContext();
+        });
+    }
+
+    private Flux<AppStreamEvent> buildVueProject(Long appId) {
+        String projectPath = AppConstant.CODE_OUTPUT_ROOT_DIR + File.separator + "vue_project_" + appId;
+        AppStreamEvent buildingEvent = AppStreamEvent.phase("building", "代码已生成，正在构建预览...");
+        Mono<Void> buildTask = Mono.create(sink -> {
+            FutureTask<Void> task = new FutureTask<>(() -> {
+                boolean buildSuccess = vueProjectBuilder.buildProject(projectPath);
+                if (!buildSuccess) {
+                    throw new BusinessException(ErrorCode.SYSTEM_ERROR, "Vue 项目构建失败，请检查生成代码和依赖");
+                }
+                return null;
+            }) {
+                @Override
+                protected void done() {
+                    try {
+                        get();
+                        sink.success();
+                    } catch (CancellationException ignored) {
+                        // SSE 已断开，无需再向已取消的订阅发送结果。
+                    } catch (ExecutionException error) {
+                        sink.error(error.getCause());
+                    } catch (InterruptedException error) {
+                        Thread.currentThread().interrupt();
+                        sink.error(error);
+                    }
+                }
+            };
+            sink.onDispose(() -> cancelBuildTask(task));
+            try {
+                vueProjectBuildTaskExecutor.execute(task);
+            } catch (RuntimeException error) {
+                sink.error(new BusinessException(
+                        ErrorCode.SYSTEM_ERROR, "当前构建任务较多，请稍后重试"));
+            }
+        });
+        return Flux.concat(Mono.just(buildingEvent), buildTask.thenMany(Flux.empty()));
+    }
+
+    private void cancelBuildTask(FutureTask<?> task) {
+        task.cancel(true);
+        if (vueProjectBuildTaskExecutor instanceof ThreadPoolTaskExecutor executor) {
+            executor.getThreadPoolExecutor().remove(task);
+        }
     }
 
     @Override

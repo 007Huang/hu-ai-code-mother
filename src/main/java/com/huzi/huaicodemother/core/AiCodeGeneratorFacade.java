@@ -8,8 +8,6 @@ import com.huzi.huaicodemother.ai.model.MultiFileCodeResult;
 import com.huzi.huaicodemother.ai.model.message.AiResponseMessage;
 import com.huzi.huaicodemother.ai.model.message.ToolExecutedMessage;
 import com.huzi.huaicodemother.ai.model.message.ToolRequestMessage;
-import com.huzi.huaicodemother.constant.AppConstant;
-import com.huzi.huaicodemother.core.builder.VueProjectBuilder;
 import com.huzi.huaicodemother.core.parser.CodeParserExecutor;
 import com.huzi.huaicodemother.core.saver.CodeFileSaverExecutor;
 import com.huzi.huaicodemother.exception.BusinessException;
@@ -36,8 +34,6 @@ public class AiCodeGeneratorFacade {
 //    private AiCodeGeneratorService aiCodeGeneratorService;
     @Resource
     private AiCodeGeneratorServiceFactory aiCodeGeneratorServiceFactory;
-    @Resource
-    private VueProjectBuilder vueProjectBuilder;
     /**
      * 统一入口：根据类型生成并保存代码
      *
@@ -121,13 +117,7 @@ public class AiCodeGeneratorFacade {
                         ToolExecutedMessage toolExecutedMessage = new ToolExecutedMessage(toolExecution);
                         sink.next(JSONUtil.toJsonStr(toolExecutedMessage));
                     })
-                    .onCompleteResponse((ChatResponse response) -> {
-                        // 执行 Vue 项目构建（同步执行，确保预览时项目已就绪）
-                        String projectPath = AppConstant.CODE_OUTPUT_ROOT_DIR + File.separator + "vue_project_" + appId;
-                        vueProjectBuilder.buildProject(projectPath);
-
-                        sink.complete();
-                    })
+                    .onCompleteResponse((ChatResponse response) -> sink.complete())
                     .onError((Throwable error) -> {
                         error.printStackTrace();
                         sink.error(error);
