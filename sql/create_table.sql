@@ -52,7 +52,7 @@ create table app
 create table chat_history
 (
     id          bigint auto_increment comment 'id' primary key,
-    message     text                               not null comment '消息',
+    message     mediumtext                         not null comment '消息',  --以后新建的数据库表使用 MEDIUMTEXT，最大容量约 16 MB
     messageType varchar(32)                        not null comment 'user/ai',
     appId       bigint                             not null comment '应用id',
     userId      bigint                             not null comment '创建用户id',

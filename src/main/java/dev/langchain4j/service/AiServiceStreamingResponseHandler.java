@@ -121,6 +121,10 @@ class AiServiceStreamingResponseHandler implements StreamingChatResponseHandler 
                 String toolName = toolExecutionRequest.name();
                 ToolExecutor toolExecutor = toolExecutors.get(toolName);
                 String toolExecutionResult = toolExecutor.execute(toolExecutionRequest, memoryId);
+                if (toolExecutionResult == null || toolExecutionResult.isBlank()) {
+                    LOG.warn("Tool '{}' returned an empty result, replacing it with a fallback message", toolName);
+                    toolExecutionResult = "工具执行完成，但未返回内容。";
+                }
                 ToolExecutionResultMessage toolExecutionResultMessage =
                         ToolExecutionResultMessage.from(toolExecutionRequest, toolExecutionResult);
                 addToMemory(toolExecutionResultMessage);

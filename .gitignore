@@ -2,7 +2,9 @@
 application-local.yml
 application-prod.yml
 tmp
+docs
 
+.claude
 
 HELP.md
 target/

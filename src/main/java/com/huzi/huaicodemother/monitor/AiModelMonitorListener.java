@@ -33,6 +33,10 @@ public class AiModelMonitorListener implements ChatModelListener {
         requestContext.attributes().put(REQUEST_START_TIME_KEY, Instant.now());
         // 从监控上下文中获取信息
         MonitorContext context = MonitorContextHolder.getContext();
+        if (context == null) {
+            log.warn("MonitorContext 不存在，跳过本次模型请求监控");
+            return;
+        }
         String userId = context.getUserId();
         String appId = context.getAppId();
         requestContext.attributes().put(MONITOR_CONTEXT_KEY, context);
@@ -48,6 +52,10 @@ public class AiModelMonitorListener implements ChatModelListener {
         Map<Object, Object> attributes = responseContext.attributes();
         // 从监控上下文中获取信息
         MonitorContext context = (MonitorContext) attributes.get(MONITOR_CONTEXT_KEY);
+        if (context == null) {
+            log.warn("模型响应缺少 MonitorContext，跳过本次响应监控");
+            return;
+        }
         String userId = context.getUserId();
         String appId = context.getAppId();
         // 获取模型名称
@@ -62,8 +70,14 @@ public class AiModelMonitorListener implements ChatModelListener {
 
     @Override
     public void onError(ChatModelErrorContext errorContext) {
-        // 从监控上下文中获取信息
-        MonitorContext context = MonitorContextHolder.getContext();
+        Map<Object, Object> attributes = errorContext.attributes();
+        // 从属性中获取监控信息（由 onRequest 方法存储）
+        MonitorContext context = (MonitorContext) attributes.get(MONITOR_CONTEXT_KEY);
+        if (context == null) {
+            log.warn("模型异常回调缺少 MonitorContext，跳过本次异常监控，原始异常: {}",
+                    errorContext.error().getMessage());
+            return;
+        }
         String userId = context.getUserId();
         String appId = context.getAppId();
         // 获取模型名称和错误类型
@@ -73,7 +87,6 @@ public class AiModelMonitorListener implements ChatModelListener {
         aiModelMetricsCollector.recordRequest(userId, appId, modelName, "error");
         aiModelMetricsCollector.recordError(userId, appId, modelName, errorMessage);
         // 记录响应时间（即使是错误响应）
-        Map<Object, Object> attributes = errorContext.attributes();
         recordResponseTime(attributes, userId, appId, modelName);
     }
 
@@ -82,7 +95,11 @@ public class AiModelMonitorListener implements ChatModelListener {
      * 记录响应时间
      */
     private void recordResponseTime(Map<Object, Object> attributes, String userId, String appId, String modelName) {
-        Instant startTime = (Instant) attributes.get(REQUEST_START_TIME_KEY);
+        Object startTimeValue = attributes.get(REQUEST_START_TIME_KEY);
+        if (!(startTimeValue instanceof Instant startTime)) {
+            log.warn("模型请求开始时间不存在，跳过响应时间统计");
+            return;
+        }
         Duration responseTime = Duration.between(startTime, Instant.now());
         aiModelMetricsCollector.recordResponseTime(userId, appId, modelName, responseTime);
     }
