@@ -114,7 +114,9 @@ const renderedMarkdown = computed(() => {
   border: 1px solid #e1e1e1;
   border-radius: 6px;
   padding: 1em;
+  max-height: min(400px, 50vh);
   overflow-x: auto;
+  overflow-y: auto;
   margin: 1em 0;
 }
 
