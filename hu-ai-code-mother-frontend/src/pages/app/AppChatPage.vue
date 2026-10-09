@@ -158,7 +158,7 @@
     </div>
 
     <!-- 应用详情弹窗 -->
-    <AppDetailModal v-model:open="appDetailVisible" :app="appInfo" :show-actions="isOwner || isAdmin" @edit="editApp"
+    <AppDetailModal v-model:open="appDetailVisible" :app="appInfo" :show-actions="(isOwner || isAdmin) && !deletingApp" @edit="editApp"
       @delete="deleteApp" />
 
     <!-- 部署成功弹窗 -->
@@ -171,6 +171,7 @@ import { ref, reactive, onMounted, nextTick, onUnmounted, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
 import { useLoginUserStore } from '@/stores/loginUser'
+import { useAppQuotaStore } from '@/stores/appQuota'
 import {
   getAppVoById,
   deployApp as deployAppApi,
@@ -199,6 +200,8 @@ import {
 const route = useRoute()
 const router = useRouter()
 const loginUserStore = useLoginUserStore()
+const quotaStore = useAppQuotaStore()
+const deletingApp = ref(false)
 
 // 应用信息
 const appInfo = ref<API.AppVO>()
@@ -254,7 +257,9 @@ const visualEditor = new VisualEditor({
 
 // 权限相关
 const isOwner = computed(() => {
-  return appInfo.value?.userId === loginUserStore.loginUser.id
+  const ownerId = appInfo.value?.userId
+  const userId = loginUserStore.loginUser.id
+  return ownerId != null && userId != null && String(ownerId) === String(userId)
 })
 
 const isAdmin = computed(() => {
@@ -750,20 +755,27 @@ const editApp = () => {
 
 // 删除应用
 const deleteApp = async () => {
-  if (!appInfo.value?.id) return
-
+  if (appInfo.value?.id == null || deletingApp.value || !(isOwner.value || isAdmin.value)) return
+  const version = loginUserStore.authVersion
+  deletingApp.value = true
   try {
-    const res = await deleteAppApi({ id: appInfo.value.id })
+    const res = await deleteAppApi({ id: String(appInfo.value.id) })
+    if (componentUnmounted || version !== loginUserStore.authVersion) return
     if (res.data.code === 0) {
       message.success('删除成功')
       appDetailVisible.value = false
-      router.push('/')
+      // 重新读取本人额度，删除成功与额度刷新失败互不影响。
+      void quotaStore.fetchQuota(true)
+      void router.push('/')
     } else {
       message.error('删除失败：' + res.data.message)
     }
   } catch (error) {
+    if (componentUnmounted || version !== loginUserStore.authVersion) return
     console.error('删除失败：', error)
     message.error('删除失败')
+  } finally {
+    deletingApp.value = false
   }
 }
 

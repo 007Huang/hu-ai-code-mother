@@ -4,14 +4,14 @@ declare namespace API {
   }
 
   type AppAdminUpdateRequest = {
-    id?: number
+    id?: string | number
     appName?: string
     cover?: string
     priority?: number
   }
 
   type AppDeployRequest = {
-    appId?: number
+    appId?: string | number
   }
 
   type AppQueryRequest = {
@@ -19,23 +19,34 @@ declare namespace API {
     pageSize?: number
     sortField?: string
     sortOrder?: string
-    id?: number
+    id?: string | number
     appName?: string
     cover?: string
     initPrompt?: string
     codeGenType?: string
     deployKey?: string
     priority?: number
-    userId?: number
+    userId?: string | number
+  }
+
+  type AppQuotaVO = {
+    usedCount: number
+    limitCount: number
+    remainingCount: number
+    canCreate: boolean
+    overLimit: boolean
+    appLimit?: number | null
+    defaultLimit: number
+    usesDefault: boolean
   }
 
   type AppUpdateRequest = {
-    id?: number
+    id?: string | number
     appName?: string
   }
 
   type AppVO = {
-    id?: number
+    id?: string | number
     appName?: string
     cover?: string
     initPrompt?: string
@@ -43,10 +54,16 @@ declare namespace API {
     deployKey?: string
     deployedTime?: string
     priority?: number
-    userId?: number
+    userId?: string | number
     createTime?: string
     updateTime?: string
     user?: UserVO
+  }
+
+  type BaseResponseAppQuotaVO = {
+    code?: number
+    data?: AppQuotaVO
+    message?: string
   }
 
   type BaseResponseAppVO = {
@@ -69,7 +86,7 @@ declare namespace API {
 
   type BaseResponseLong = {
     code?: number
-    data?: number
+    data?: string | number
     message?: string
   }
 
@@ -110,11 +127,11 @@ declare namespace API {
   }
 
   type ChatHistory = {
-    id?: number
+    id?: string | number
     message?: string
     messageType?: string
-    appId?: number
-    userId?: number
+    appId?: string | number
+    userId?: string | number
     createTime?: string
     updateTime?: string
     isDelete?: number
@@ -125,51 +142,93 @@ declare namespace API {
     pageSize?: number
     sortField?: string
     sortOrder?: string
-    id?: number
+    id?: string | number
     message?: string
     messageType?: string
-    appId?: number
-    userId?: number
+    appId?: string | number
+    userId?: string | number
     lastCreateTime?: string
   }
 
   type chatToGenCodeParams = {
-    appId: number
+    appId: string | number
     message: string
   }
 
   type DeleteRequest = {
-    id?: number
+    id?: string | number
+  }
+
+  type DiagramTask = {
+    mermaidCode?: string
+    description?: string
   }
 
   type downloadAppCodeParams = {
-    appId: number
+    appId: string | number
+  }
+
+  type executeWorkflowParams = {
+    prompt: string
+  }
+
+  type executeWorkflowWithFluxParams = {
+    prompt: string
+  }
+
+  type executeWorkflowWithSseParams = {
+    prompt: string
   }
 
   type getAppVOByIdByAdminParams = {
-    id: number
+    id: string | number
   }
 
   type getAppVOByIdParams = {
-    id: number
+    id: string | number
   }
 
   type getUserByIdParams = {
-    id: number
+    id: string | number
+  }
+
+  type getUserQuotaParams = {
+    id: string | number
   }
 
   type getUserVOByIdParams = {
-    id: number
+    id: string | number
+  }
+
+  type IllustrationTask = {
+    query?: string
+  }
+
+  type ImageCollectionPlan = {
+    contentImageTasks?: ImageSearchTask[]
+    illustrationTasks?: IllustrationTask[]
+    diagramTasks?: DiagramTask[]
+    logoTasks?: LogoTask[]
+  }
+
+  type ImageResource = {
+    category?: 'CONTENT' | 'LOGO' | 'ILLUSTRATION' | 'ARCHITECTURE'
+    description?: string
+    url?: string
+  }
+
+  type ImageSearchTask = {
+    query?: string
   }
 
   type listAppChatHistoryParams = {
-    appId: number
+    appId: string | number
     pageSize?: number
     lastCreateTime?: string
   }
 
   type LoginUserVO = {
-    id?: number
+    id?: string | number
     userAccount?: string
     userName?: string
     userAvatar?: string
@@ -179,31 +238,41 @@ declare namespace API {
     updateTime?: string
   }
 
+  type LogoTask = {
+    description?: string
+  }
+
   type PageAppVO = {
     records?: AppVO[]
-    pageNumber?: number
-    pageSize?: number
-    totalPage?: number
-    totalRow?: number
+    pageNumber?: string | number
+    pageSize?: string | number
+    totalPage?: string | number
+    totalRow?: string | number
     optimizeCountQuery?: boolean
   }
 
   type PageChatHistory = {
     records?: ChatHistory[]
-    pageNumber?: number
-    pageSize?: number
-    totalPage?: number
-    totalRow?: number
+    pageNumber?: string | number
+    pageSize?: string | number
+    totalPage?: string | number
+    totalRow?: string | number
     optimizeCountQuery?: boolean
   }
 
   type PageUserVO = {
     records?: UserVO[]
-    pageNumber?: number
-    pageSize?: number
-    totalPage?: number
-    totalRow?: number
+    pageNumber?: string | number
+    pageSize?: string | number
+    totalPage?: string | number
+    totalRow?: string | number
     optimizeCountQuery?: boolean
+  }
+
+  type QualityResult = {
+    isValid?: boolean
+    errors?: string[]
+    suggestions?: string[]
   }
 
   type ServerSentEventString = true
@@ -212,8 +281,12 @@ declare namespace API {
     deployKey: string
   }
 
+  type SseEmitter = {
+    timeout?: string | number
+  }
+
   type User = {
-    id?: number
+    id?: string | number
     userAccount?: string
     userPassword?: string
     userName?: string
@@ -244,11 +317,16 @@ declare namespace API {
     pageSize?: number
     sortField?: string
     sortOrder?: string
-    id?: number
+    id?: string | number
     userName?: string
     userAccount?: string
     userProfile?: string
     userRole?: string
+  }
+
+  type UserQuotaUpdateRequest = {
+    id?: string
+    appLimit: number | null
   }
 
   type UserRegisterRequest = {
@@ -257,8 +335,14 @@ declare namespace API {
     checkPassword?: string
   }
 
+  type UserUpdateMyRequest = {
+    userName?: string
+    userAvatar?: string
+    userProfile?: string
+  }
+
   type UserUpdateRequest = {
-    id?: number
+    id?: string | number
     userName?: string
     userAvatar?: string
     userProfile?: string
@@ -266,12 +350,30 @@ declare namespace API {
   }
 
   type UserVO = {
-    id?: number
+    id?: string | number
     userAccount?: string
     userName?: string
     userAvatar?: string
     userProfile?: string
     userRole?: string
     createTime?: string
+  }
+
+  type WorkflowContext = {
+    currentStep?: string
+    originalPrompt?: string
+    imageListStr?: string
+    imageList?: ImageResource[]
+    enhancedPrompt?: string
+    generationType?: 'HTML' | 'MULTI_FILE' | 'VUE_PROJECT'
+    generatedCodeDir?: string
+    buildResultDir?: string
+    errorMessage?: string
+    qualityResult?: QualityResult
+    imageCollectionPlan?: ImageCollectionPlan
+    contentImages?: ImageResource[]
+    illustrations?: ImageResource[]
+    diagrams?: ImageResource[]
+    logos?: ImageResource[]
   }
 }

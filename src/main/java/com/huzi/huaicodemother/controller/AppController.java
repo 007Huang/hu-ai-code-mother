@@ -19,6 +19,8 @@ import com.huzi.huaicodemother.model.entity.User;
 import com.huzi.huaicodemother.model.enums.CodeGenTypeEnum;
 import com.huzi.huaicodemother.model.sse.AppStreamEvent;
 import com.huzi.huaicodemother.model.vo.AppVO;
+import com.huzi.huaicodemother.model.vo.AppQuotaVO;
+import com.huzi.huaicodemother.service.AppQuotaService;
 import com.huzi.huaicodemother.ratelimter.annotation.RateLimit;
 import com.huzi.huaicodemother.ratelimter.enums.RateLimitType;
 import com.huzi.huaicodemother.service.AppService;
@@ -57,6 +59,8 @@ public class AppController {
 
     @Resource
     private UserService userService;
+    @Resource
+    private AppQuotaService appQuotaService;
     @Resource
     private ProjectDownloadService projectDownloadService;
     @Resource
@@ -199,6 +203,12 @@ public class AppController {
 
 
     // ==================== 用户接口 ====================
+
+    @GetMapping("/my/quota")
+    public BaseResponse<AppQuotaVO> getMyAppQuota(HttpServletRequest request) {
+        User loginUser = userService.getLoginUser(request);
+        return ResultUtils.success(appQuotaService.getQuota(loginUser.getId()));
+    }
 
     /**
      * 创建应用

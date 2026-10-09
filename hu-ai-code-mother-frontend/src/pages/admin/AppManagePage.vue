@@ -79,7 +79,7 @@
               {{ record.priority === 99 ? '取消精选' : '精选' }}
             </a-button>
             <a-popconfirm title="确定要删除这个应用吗？" @confirm="deleteApp(record.id)">
-              <a-button danger size="small">删除</a-button>
+              <a-button danger size="small" :loading="deletingIds.has(String(record.id))">删除</a-button>
             </a-popconfirm>
           </a-space>
         </template>
@@ -89,15 +89,23 @@
 </template>
 
 <script lang="ts" setup>
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
+import { useLoginUserStore } from '@/stores/loginUser'
+import { useAppQuotaStore } from '@/stores/appQuota'
 import { message } from 'ant-design-vue'
 import { listAppVoByPageByAdmin, deleteAppByAdmin, updateAppByAdmin } from '@/api/appController'
 import { CODE_GEN_TYPE_OPTIONS, formatCodeGenType } from '@/utils/codeGenTypes'
 import { formatTime } from '@/utils/time'
+import { toSafeCount } from '@/utils/count'
 import UserInfo from '@/components/UserInfo.vue'
 
 const router = useRouter()
+const loginUserStore = useLoginUserStore()
+const quotaStore = useAppQuotaStore()
+const deletingIds = ref(new Set<string>())
+let disposed = false
+onUnmounted(() => { disposed = true })
 
 const columns = [
   {
@@ -172,7 +180,7 @@ const fetchData = async () => {
     })
     if (res.data.data) {
       data.value = res.data.data.records ?? []
-      total.value = res.data.data.totalRow ?? 0
+      total.value = toSafeCount(res.data.data.totalRow)
     } else {
       message.error('获取数据失败，' + res.data.message)
     }
@@ -190,8 +198,8 @@ onMounted(() => {
 // 分页参数
 const pagination = computed(() => {
   return {
-    current: searchParams.pageNum ?? 1,
-    pageSize: searchParams.pageSize ?? 10,
+    current: toSafeCount(searchParams.pageNum ?? 1),
+    pageSize: toSafeCount(searchParams.pageSize ?? 10),
     total: total.value,
     showSizeChanger: true,
     showTotal: (total: number) => `共 ${total} 条`,
@@ -243,21 +251,29 @@ const toggleFeatured = async (app: API.AppVO) => {
 }
 
 // 删除应用
-const deleteApp = async (id: number | undefined) => {
-  if (!id) return
-
+const deleteApp = async (id: string | number | undefined) => {
+  if (id == null) return
+  const targetId = String(id)
+  if (deletingIds.value.has(targetId)) return
+  const version = loginUserStore.authVersion
+  deletingIds.value.add(targetId)
   try {
-    const res = await deleteAppByAdmin({ id })
+    const res = await deleteAppByAdmin({ id: targetId })
+    if (disposed || version !== loginUserStore.authVersion) return
     if (res.data.code === 0) {
       message.success('删除成功')
-      // 刷新数据
-      fetchData()
+      void fetchData()
+      // 管理员删除成功后重取本人额度，不在本地猜测或扣减计数。
+      void quotaStore.fetchQuota(true)
     } else {
       message.error('删除失败：' + res.data.message)
     }
   } catch (error) {
+    if (disposed || version !== loginUserStore.authVersion) return
     console.error('删除失败：', error)
     message.error('删除失败')
+  } finally {
+    deletingIds.value.delete(targetId)
   }
 }
 </script>

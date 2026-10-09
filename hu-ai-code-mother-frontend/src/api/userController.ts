@@ -99,6 +99,36 @@ export async function userLogout(options?: { [key: string]: any }) {
   })
 }
 
+/** 此处后端没有提供注释 GET /user/quota/get */
+export async function getUserQuota(
+  // 叠加生成的Param类型 (非body参数swagger默认没有生成对象)
+  params: API.getUserQuotaParams,
+  options?: { [key: string]: any }
+) {
+  return request<API.BaseResponseAppQuotaVO>('/user/quota/get', {
+    method: 'GET',
+    params: {
+      ...params,
+    },
+    ...(options || {}),
+  })
+}
+
+/** 此处后端没有提供注释 POST /user/quota/update */
+export async function updateUserQuota(
+  body: API.UserQuotaUpdateRequest,
+  options?: { [key: string]: any }
+) {
+  return request<API.BaseResponseAppQuotaVO>('/user/quota/update', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    data: body,
+    ...(options || {}),
+  })
+}
+
 /** 此处后端没有提供注释 POST /user/register */
 export async function register(body: API.UserRegisterRequest, options?: { [key: string]: any }) {
   return request<API.BaseResponseLong>('/user/register', {
@@ -114,6 +144,21 @@ export async function register(body: API.UserRegisterRequest, options?: { [key: 
 /** 此处后端没有提供注释 POST /user/update */
 export async function updateUser(body: API.UserUpdateRequest, options?: { [key: string]: any }) {
   return request<API.BaseResponseBoolean>('/user/update', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    data: body,
+    ...(options || {}),
+  })
+}
+
+/** 此处后端没有提供注释 POST /user/update/my */
+export async function updateMyUser(
+  body: API.UserUpdateMyRequest,
+  options?: { [key: string]: any }
+) {
+  return request<API.BaseResponseLoginUserVO>('/user/update/my', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',

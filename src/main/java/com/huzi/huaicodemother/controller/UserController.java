@@ -11,6 +11,8 @@ import com.huzi.huaicodemother.exception.ErrorCode;
 import com.huzi.huaicodemother.exception.ThrowUtils;
 import com.huzi.huaicodemother.model.dto.user.*;
 import com.huzi.huaicodemother.model.vo.LoginUserVO;
+import com.huzi.huaicodemother.model.vo.AppQuotaVO;
+import com.huzi.huaicodemother.service.AppQuotaService;
 import com.huzi.huaicodemother.model.vo.UserVO;
 import com.mybatisflex.core.paginate.Page;
 import jakarta.annotation.Resource;
@@ -37,6 +39,35 @@ public class UserController {
 
     @Resource
     private UserService userService;
+
+    @Resource
+    private AppQuotaService appQuotaService;
+
+    /** 仅更新当前会话用户资料，不能通过请求指定目标用户或角色。 */
+    @PostMapping("/update/my")
+    public BaseResponse<LoginUserVO> updateMyUser(@RequestBody UserUpdateMyRequest updateRequest,
+                                                HttpServletRequest request) {
+        ThrowUtils.throwIf(updateRequest == null, ErrorCode.PARAMS_ERROR);
+        User loginUser = userService.getLoginUser(request);
+        return ResultUtils.success(userService.updateMyUser(updateRequest, loginUser));
+    }
+
+    @GetMapping("/quota/get")
+    @AuthCheck(mustRole = UserConstant.ADMIN_ROLE)
+    public BaseResponse<AppQuotaVO> getUserQuota(long id) {
+        ThrowUtils.throwIf(id <= 0, ErrorCode.PARAMS_ERROR);
+        return ResultUtils.success(appQuotaService.getQuota(id));
+    }
+
+    @PostMapping("/quota/update")
+    @AuthCheck(mustRole = UserConstant.ADMIN_ROLE)
+    public BaseResponse<AppQuotaVO> updateUserQuota(@RequestBody UserQuotaUpdateRequest updateRequest) {
+        ThrowUtils.throwIf(updateRequest == null || updateRequest.getId() == null
+                        || updateRequest.getId() <= 0 || !updateRequest.isAppLimitPresent(),
+                ErrorCode.PARAMS_ERROR, "必须提供用户 ID 和 appLimit 字段（null 表示默认配额）");
+        return ResultUtils.success(appQuotaService.updateQuota(updateRequest.getId(), updateRequest.getAppLimit()));
+    }
+
     /**
      * 注册用户。
      *

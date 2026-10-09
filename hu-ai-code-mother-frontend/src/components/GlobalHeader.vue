@@ -18,16 +18,46 @@
       <a-col>
         <div class="user-login-status">
           <div v-if="loginUserStore.loginUser.id">
-            <a-dropdown>
-              <a-space>
-                <a-avatar :src="loginUserStore.loginUser.userAvatar" />
-                {{ loginUserStore.loginUser.userName ?? '无名' }}
-              </a-space>
+            <a-dropdown v-model:open="accountMenuOpen" :trigger="['click']" overlay-class-name="account-dropdown" @open-change="handleAccountOpen">
+              <a-button
+                type="text"
+                class="account-trigger"
+                aria-label="打开账户菜单"
+                aria-haspopup="menu"
+                :aria-expanded="accountMenuOpen"
+                data-testid="account-menu-trigger"
+                @keydown.down.prevent="accountMenuOpen = true; handleAccountOpen(true)"
+                @keydown.esc="accountMenuOpen = false"
+              >
+                <a-space>
+                  <a-avatar :src="loginUserStore.loginUser.userAvatar">
+                    <template #icon><UserOutlined /></template>
+                  </a-avatar>
+                  <span class="account-name">{{ loginUserStore.loginUser.userName ?? '无名' }}</span>
+                </a-space>
+              </a-button>
               <template #overlay>
                 <a-menu>
-                  <a-menu-item @click="doLogout">
+                  <a-menu-item key="identity" disabled class="account-summary">
+                    <div>{{ loginUserStore.loginUser.userName || '无名' }}</div>
+                    <div class="account-muted">{{ loginUserStore.loginUser.userAccount || '已登录' }}</div>
+                    <div>{{ loginUserStore.loginUser.userRole === 'admin' ? '管理员' : '普通用户' }}</div>
+                  </a-menu-item>
+                  <a-menu-item key="quota-summary" disabled class="account-summary">
+                    <span v-if="quotaStore.loading" role="status">正在加载应用额度…</span>
+                    <span v-else-if="quotaStore.error">应用额度加载失败</span>
+                    <span v-else-if="quotaStore.quota">应用 {{ quotaStore.quota.usedCount }} / {{ quotaStore.quota.limitCount }}，剩余 {{ quotaStore.quota.remainingCount }}</span>
+                    <span v-else>应用额度暂不可用</span>
+                  </a-menu-item>
+                  <a-menu-item v-if="quotaStore.error" key="quota-retry" @click="quotaStore.fetchQuota(true)">重试加载额度</a-menu-item>
+                  <a-menu-divider />
+                  <a-menu-item key="profile" @click="openCenter('profile')"><UserOutlined /> 个人资料</a-menu-item>
+                  <a-menu-item key="works" @click="openCenter('works')">我的作品</a-menu-item>
+                  <a-menu-item key="quota" @click="openCenter('quota')">应用额度</a-menu-item>
+                  <a-menu-divider />
+                  <a-menu-item key="logout" :disabled="loggingOut" @click="doLogout">
                     <LogoutOutlined />
-                    退出登录
+                    {{ loggingOut ? '正在退出…' : '退出登录' }}
                   </a-menu-item>
                 </a-menu>
               </template>
@@ -43,20 +73,37 @@
 </template>
 
 <script setup lang="ts">
-import { computed, h, ref } from 'vue'
+import { computed, h, onUnmounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { type MenuProps, message } from 'ant-design-vue'
 import { useLoginUserStore } from '@/stores/loginUser.ts'
+import { useAppQuotaStore } from '@/stores/appQuota'
 import { userLogout } from '@/api/userController.ts'
-import { LogoutOutlined, HomeOutlined } from '@ant-design/icons-vue'
+import { LogoutOutlined, HomeOutlined, UserOutlined } from '@ant-design/icons-vue'
 
 const loginUserStore = useLoginUserStore()
+const quotaStore = useAppQuotaStore()
 const router = useRouter()
+const accountMenuOpen = ref(false)
+const loggingOut = ref(false)
+let disposed = false
+const handleAccountOpen = (open: boolean) => {
+  if (open && loginUserStore.loginUser.id) void quotaStore.fetchQuota()
+}
+const openCenter = (tab: 'profile' | 'works' | 'quota') => {
+  accountMenuOpen.value = false
+  void router.push({ path: '/user/center', query: { tab } })
+}
+watch(() => loginUserStore.authVersion, () => { accountMenuOpen.value = false })
 // 当前选中菜单
 const selectedKeys = ref<string[]>(['/'])
 // 监听路由变化，更新当前选中菜单
-router.afterEach((to, from, next) => {
+const removeRouteHook = router.afterEach((to) => {
   selectedKeys.value = [to.path]
+})
+onUnmounted(() => {
+  disposed = true
+  removeRouteHook()
 })
 
 // 菜单配置项
@@ -119,15 +166,25 @@ const handleMenuClick: MenuProps['onClick'] = (e) => {
 
 // 退出登录
 const doLogout = async () => {
-  const res = await userLogout()
-  if (res.data.code === 0) {
-    loginUserStore.setLoginUser({
-      userName: '未登录',
-    })
-    message.success('退出登录成功')
-    await router.push('/user/login')
-  } else {
-    message.error('退出登录失败，' + res.data.message)
+  if (loggingOut.value) return
+  const version = loginUserStore.authVersion
+  loggingOut.value = true
+  try {
+    const res = await userLogout()
+    if (disposed || version !== loginUserStore.authVersion) return
+    if (res.data.code === 0) {
+      loginUserStore.setLoginUser({ userName: '未登录' })
+      quotaStore.reset()
+      accountMenuOpen.value = false
+      message.success('退出登录成功')
+      await router.push('/user/login')
+    } else {
+      message.error('退出登录失败，' + res.data.message)
+    }
+  } catch {
+    if (!disposed && version === loginUserStore.authVersion) message.error('退出登录失败，请重试')
+  } finally {
+    if (!disposed) loggingOut.value = false
   }
 }
 </script>
@@ -157,5 +214,32 @@ const doLogout = async () => {
 
 .ant-menu-horizontal {
   border-bottom: none !important;
+}
+
+.account-trigger {
+  height: auto;
+  padding: 4px 8px;
+}
+
+.account-name {
+  display: inline-block;
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+
+:global(.account-dropdown .account-summary) {
+  cursor: default;
+  color: #262626 !important;
+  white-space: normal;
+  max-width: 300px;
+  overflow-wrap: anywhere;
+}
+
+:global(.account-dropdown .account-muted) {
+  color: #666;
+  font-size: 12px;
 }
 </style>

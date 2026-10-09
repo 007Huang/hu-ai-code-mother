@@ -1,6 +1,7 @@
 package com.huzi.huaicodemother.service;
 
 import com.huzi.huaicodemother.model.dto.user.UserQueryRequest;
+import com.huzi.huaicodemother.model.dto.user.UserUpdateMyRequest;
 import com.huzi.huaicodemother.model.vo.LoginUserVO;
 import com.huzi.huaicodemother.model.vo.UserVO;
 import com.mybatisflex.core.query.QueryWrapper;
@@ -35,6 +36,9 @@ public interface UserService extends IService<User> {
      * @return 脱敏后的用户信息
      */
     LoginUserVO getLoginUserVO(User user);
+
+    /** 仅更新当前已登录用户的昵称、头像和简介。 */
+    LoginUserVO updateMyUser(UserUpdateMyRequest updateRequest, User loginUser);
     /**
      * 用户登录
      *

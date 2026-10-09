@@ -2,6 +2,8 @@ package com.huzi.huaicodemother.mapper;
 
 import com.mybatisflex.core.BaseMapper;
 import com.huzi.huaicodemother.model.entity.App;
+import org.apache.ibatis.annotations.Param;
+import org.apache.ibatis.annotations.Select;
 
 /**
  * 应用 映射层。
@@ -11,4 +13,6 @@ import com.huzi.huaicodemother.model.entity.App;
  */
 public interface AppMapper extends BaseMapper<App> {
 
+    @Select("SELECT COUNT(*) FROM app WHERE userId = #{userId} AND isDelete = 0")
+    long countActiveByUserId(@Param("userId") Long userId);
 }

@@ -17,17 +17,19 @@
         <RouterLink to="/user/register">去注册</RouterLink>
       </div>
       <a-form-item>
-        <a-button type="primary" html-type="submit" style="width: 100%">登录</a-button>
+        <a-button type="primary" html-type="submit" :loading="submitting" style="width: 100%">登录</a-button>
       </a-form-item>
     </a-form>
   </div>
 </template>
 <script lang="ts" setup>
-import { reactive } from 'vue'
+import { reactive, ref } from 'vue'
 import { userLogin } from '@/api/userController.ts'
 import { useLoginUserStore } from '@/stores/loginUser.ts'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
+import { getSafeRedirect } from '@/utils/redirect'
+import { useAppQuotaStore } from '@/stores/appQuota'
 
 const formState = reactive<API.UserLoginRequest>({
   userAccount: '',
@@ -35,24 +37,38 @@ const formState = reactive<API.UserLoginRequest>({
 })
 
 const router = useRouter()
+const route = useRoute()
 const loginUserStore = useLoginUserStore()
+const quotaStore = useAppQuotaStore()
+const submitting = ref(false)
 
 /**
  * 提交表单
  * @param values
  */
-const handleSubmit = async (values: any) => {
-  const res = await userLogin(values)
-  // 登录成功，把登录态保存到全局状态中
-  if (res.data.code === 0 && res.data.data) {
-    await loginUserStore.fetchLoginUser()
-    message.success('登录成功')
-    router.push({
-      path: '/',
-      replace: true,
-    })
-  } else {
-    message.error('登录失败，' + res.data.message)
+const handleSubmit = async (values: API.UserLoginRequest) => {
+  if (submitting.value) {
+    return
+  }
+  submitting.value = true
+  const revision = loginUserStore.authVersion
+  try {
+    const res = await userLogin(values)
+    if (revision !== loginUserStore.authVersion) {
+      return
+    }
+    if (res.data.code === 0 && res.data.data) {
+      loginUserStore.setLoginUser(res.data.data)
+      void quotaStore.fetchQuota(true)
+      message.success('登录成功')
+      await router.replace(getSafeRedirect(route.query.redirect))
+    } else {
+      message.error('登录失败，' + res.data.message)
+    }
+  } catch {
+    message.error('登录失败，请检查网络后重试')
+  } finally {
+    submitting.value = false
   }
 }
 </script>
