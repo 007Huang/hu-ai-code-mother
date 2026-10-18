@@ -7,6 +7,9 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Scope;
+
+import java.util.Map;
+
 /**
  * 创建用于智能路由判断的ChatModel
  */
@@ -39,6 +42,8 @@ public class RoutingAiModelConfig {
                 .apiKey(apiKey)
                 .modelName(modelName)
                 .baseUrl(baseUrl)
+                // 显式请求未压缩正文，绕过响应压缩协商异常
+                .customHeaders(Map.of("Accept-Encoding", "identity"))
                 .maxTokens(maxTokens)
                 .temperature(temperature)
                 .logRequests(logRequests)

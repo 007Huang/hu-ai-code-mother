@@ -15,13 +15,14 @@
           </template>
           应用详情
         </a-button>
-        <a-button type="primary" ghost @click="downloadCode" :loading="downloading" :disabled="!isOwner">
+        <a-button type="primary" ghost @click="downloadCode" :loading="downloading"
+          :disabled="!isOwner || isGenerating">
           <template #icon>
             <DownloadOutlined />
           </template>
           下载代码
         </a-button>
-        <a-button type="primary" @click="deployApp" :loading="deploying">
+        <a-button type="primary" @click="deployApp" :loading="deploying" :disabled="!isOwner || isGenerating">
           <template #icon>
             <CloudUploadOutlined />
           </template>
@@ -38,7 +39,8 @@
         <div class="messages-container" ref="messagesContainer">
           <!-- 加载更多按钮 -->
           <div v-if="hasMoreHistory" class="load-more-container">
-            <a-button type="link" @click="loadMoreHistory" :loading="loadingHistory" size="small">
+            <a-button type="link" @click="loadMoreHistory" :loading="loadingHistory"
+              :disabled="isGenerating" size="small">
               加载更多历史消息
             </a-button>
           </div>
@@ -54,7 +56,9 @@
                 <a-avatar :src="aiAvatar" />
               </div>
               <div class="message-content">
-                <MarkdownRenderer v-if="message.content" :content="message.content" />
+                <div v-if="message.streaming && message.content" class="streaming-content"
+                  v-text="message.content"></div>
+                <MarkdownRenderer v-else-if="message.content" :content="message.content" />
                 <div v-if="message.loading" class="loading-indicator">
                   <a-spin size="small" />
                   <span>AI 正在思考...</span>
@@ -122,13 +126,14 @@
           <h3>生成后的网页展示</h3>
           <div class="preview-actions">
             <a-button v-if="isOwner && previewUrl" type="link" :danger="isEditMode" @click="toggleEditMode"
-              :class="{ 'edit-mode-active': isEditMode }" style="padding: 0; height: auto; margin-right: 12px">
+              :disabled="isGenerating" :class="{ 'edit-mode-active': isEditMode }"
+              style="padding: 0; height: auto; margin-right: 12px">
               <template #icon>
                 <EditOutlined />
               </template>
               {{ isEditMode ? '退出编辑' : '编辑模式' }}
             </a-button>
-            <a-button v-if="previewUrl" type="link" @click="openInNewTab">
+            <a-button v-if="previewUrl" type="link" @click="openInNewTab" :disabled="isGenerating">
               <template #icon>
                 <ExportOutlined />
               </template>
@@ -141,17 +146,19 @@
             <div class="placeholder-icon">🌐</div>
             <p>网站文件生成完成后将在这里展示</p>
           </div>
-          <div v-else-if="isGenerating" class="preview-loading">
+          <iframe v-if="previewUrl" :key="previewRevision" :src="previewUrl" class="preview-iframe" frameborder="0"
+            @load="onIframeLoad"></iframe>
+          <div v-if="isGenerating" class="preview-loading preview-loading-overlay">
             <a-spin size="large" />
-            <p>正在生成网站...</p>
+            <p>{{ generationStatus }}</p>
+            <span v-if="previewUrl">当前显示的是上一版本，完成后将自动刷新</span>
           </div>
-          <iframe v-else :src="previewUrl" class="preview-iframe" frameborder="0" @load="onIframeLoad"></iframe>
         </div>
       </div>
     </div>
 
     <!-- 应用详情弹窗 -->
-    <AppDetailModal v-model:open="appDetailVisible" :app="appInfo" :show-actions="isOwner || isAdmin" @edit="editApp"
+    <AppDetailModal v-model:open="appDetailVisible" :app="appInfo" :show-actions="(isOwner || isAdmin) && !deletingApp" @edit="editApp"
       @delete="deleteApp" />
 
     <!-- 部署成功弹窗 -->
@@ -160,10 +167,11 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, nextTick, onUnmounted, computed } from 'vue'
+import { ref, reactive, onMounted, nextTick, onUnmounted, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
 import { useLoginUserStore } from '@/stores/loginUser'
+import { useAppQuotaStore } from '@/stores/appQuota'
 import {
   getAppVoById,
   deployApp as deployAppApi,
@@ -192,6 +200,8 @@ import {
 const route = useRoute()
 const router = useRouter()
 const loginUserStore = useLoginUserStore()
+const quotaStore = useAppQuotaStore()
+const deletingApp = ref(false)
 
 // 应用信息
 const appInfo = ref<API.AppVO>()
@@ -202,6 +212,7 @@ interface Message {
   type: 'user' | 'ai'
   content: string
   loading?: boolean
+  streaming?: boolean
   createTime?: string
 }
 
@@ -209,6 +220,10 @@ const messages = ref<Message[]>([])
 const userInput = ref('')
 const isGenerating = ref(false)
 const messagesContainer = ref<HTMLElement>()
+let contentPublishTimer: ReturnType<typeof setTimeout> | null = null
+let scrollFrameId: number | null = null
+let scrollScheduleId = 0
+let componentUnmounted = false
 
 // 对话历史相关
 const loadingHistory = ref(false)
@@ -219,6 +234,9 @@ const historyLoaded = ref(false)
 // 预览相关
 const previewUrl = ref('')
 const previewReady = ref(false)
+const previewRevision = ref(0)
+const generationStatus = ref('正在生成代码...')
+let activeEventSource: EventSource | null = null
 
 // 部署相关
 const deploying = ref(false)
@@ -239,7 +257,9 @@ const visualEditor = new VisualEditor({
 
 // 权限相关
 const isOwner = computed(() => {
-  return appInfo.value?.userId === loginUserStore.loginUser.id
+  const ownerId = appInfo.value?.userId
+  const userId = loginUserStore.loginUser.id
+  return ownerId != null && userId != null && String(ownerId) === String(userId)
 })
 
 const isAdmin = computed(() => {
@@ -256,7 +276,7 @@ const showAppDetail = () => {
 
 // 加载对话历史
 const loadChatHistory = async (isLoadMore = false) => {
-  if (!appId.value || loadingHistory.value) return
+  if (!appId.value || loadingHistory.value || (isLoadMore && isGenerating.value)) return
   loadingHistory.value = true
   try {
     const params: API.listAppChatHistoryParams = {
@@ -326,6 +346,7 @@ const fetchAppInfo = async () => {
 
       // 先加载对话历史
       await loadChatHistory()
+      if (componentUnmounted) return
       // 如果有至少2条对话记录，展示对应的网站
       if (messages.value.length >= 2) {
         updatePreview()
@@ -360,19 +381,23 @@ const sendInitialMessage = async (prompt: string) => {
   })
 
   // 添加AI消息占位符
-  const aiMessageIndex = messages.value.length
-  messages.value.push({
+  const aiMessage = reactive<Message>({
     type: 'ai',
     content: '',
     loading: true,
+    streaming: true,
   })
+  messages.value.push(aiMessage)
 
+  // 在任何异步等待前占用生成状态，避免快速重复提交创建两条流。
+  generationStatus.value = '正在生成代码...'
+  isGenerating.value = true
   await nextTick()
-  scrollToBottom()
+  if (componentUnmounted) return
+  scrollToBottom(true)
 
   // 开始生成
-  isGenerating.value = true
-  await generateCode(prompt, aiMessageIndex)
+  generateCode(prompt, aiMessage)
 }
 
 // 发送消息
@@ -410,134 +435,169 @@ const sendMessage = async () => {
   }
 
   // 添加AI消息占位符
-  const aiMessageIndex = messages.value.length
-  messages.value.push({
+  const aiMessage = reactive<Message>({
     type: 'ai',
     content: '',
     loading: true,
+    streaming: true,
   })
+  messages.value.push(aiMessage)
 
+  // 在任何异步等待前占用生成状态，避免快速重复提交创建两条流。
+  generationStatus.value = '正在生成代码...'
+  isGenerating.value = true
   await nextTick()
-  scrollToBottom()
+  if (componentUnmounted) return
+  scrollToBottom(true)
 
   // 开始生成
-  isGenerating.value = true
-  await generateCode(message, aiMessageIndex)
+  generateCode(message, aiMessage)
 }
 
+const STREAM_CONTENT_PUBLISH_INTERVAL = 80
+
 // 生成代码 - 使用 EventSource 处理流式响应
-const generateCode = async (userMessage: string, aiMessageIndex: number) => {
-  let eventSource: EventSource | null = null
+const generateCode = (userMessage: string, aiMessage: Message) => {
+  if (componentUnmounted) return
   let streamCompleted = false
+  let contentFinalized = false
+  let fullContent = ''
 
+  closeActiveEventSource()
+  cancelContentPublish()
+  const publishBufferedContent = (finalize = false) => {
+    cancelContentPublish()
+    aiMessage.content = fullContent
+    aiMessage.loading = false
+    if (finalize) {
+      contentFinalized = true
+      aiMessage.streaming = false
+    }
+    scrollToBottom()
+  }
   try {
-    // 获取 axios 配置的 baseURL
     const baseURL = request.defaults.baseURL || API_BASE_URL
-
-    // 构建URL参数
     const params = new URLSearchParams({
       appId: appId.value || '',
       message: userMessage,
     })
-
-    const url = `${baseURL}/app/chat/gen/code?${params}`
-
-    // 创建 EventSource 连接
-    eventSource = new EventSource(url, {
+    const eventSource = new EventSource(`${baseURL}/app/chat/gen/code?${params}`, {
       withCredentials: true,
     })
+    activeEventSource = eventSource
 
-    let fullContent = ''
+    const scheduleContentPublish = () => {
+      if (contentPublishTimer !== null || contentFinalized) return
+      contentPublishTimer = setTimeout(() => {
+        contentPublishTimer = null
+        if (streamCompleted || activeEventSource !== eventSource || contentFinalized) return
+        publishBufferedContent()
+      }, STREAM_CONTENT_PUBLISH_INTERVAL)
+    }
 
-    // 处理接收到的消息
-    eventSource.onmessage = function (event) {
-      if (streamCompleted) return
-
+    eventSource.onmessage = (event) => {
+      if (streamCompleted || activeEventSource !== eventSource) return
       try {
-        // 解析JSON包装的数据
         const parsed = JSON.parse(event.data)
         const content = parsed.d
-
-        // 拼接内容
         if (content !== undefined && content !== null) {
           fullContent += content
-          messages.value[aiMessageIndex].content = fullContent
-          messages.value[aiMessageIndex].loading = false
-          scrollToBottom()
+          scheduleContentPublish()
         }
       } catch (error) {
-        console.error('解析消息失败:', error)
-        handleError(error, aiMessageIndex)
+        streamCompleted = true
+        handleGenerationError(error, aiMessage, fullContent, '服务器响应格式错误')
       }
     }
 
-    // 处理done事件
-    eventSource.addEventListener('done', function () {
-      if (streamCompleted) return
-
-      streamCompleted = true
-      isGenerating.value = false
-      eventSource?.close()
-
-      // 延迟更新预览，确保后端已完成处理
-      setTimeout(async () => {
-        await fetchAppInfo()
-        updatePreview()
-      }, 1000)
+    eventSource.addEventListener('phase', (event: MessageEvent) => {
+      if (streamCompleted || activeEventSource !== eventSource) return
+      try {
+        const phaseData = JSON.parse(event.data)
+        generationStatus.value = phaseData.message || '正在构建预览...'
+        if (phaseData.phase === 'building') {
+          publishBufferedContent(true)
+        }
+      } catch (error) {
+        streamCompleted = true
+        handleGenerationError(error, aiMessage, fullContent, '服务器响应格式错误')
+      }
     })
 
-    // 处理business-error事件（后端限流等错误）
-    eventSource.addEventListener('business-error', function (event: MessageEvent) {
-      if (streamCompleted) return
+    eventSource.addEventListener('done', () => {
+      if (streamCompleted || activeEventSource !== eventSource) return
+      streamCompleted = true
+      publishBufferedContent(true)
+      closeActiveEventSource()
+      isGenerating.value = false
+      previewReady.value = false
+      previewRevision.value += 1
+      updatePreview()
+    })
 
+    eventSource.addEventListener('business-error', (event: MessageEvent) => {
+      if (streamCompleted || activeEventSource !== eventSource) return
+      streamCompleted = true
       try {
         const errorData = JSON.parse(event.data)
-        console.error('SSE业务错误事件:', errorData)
-
-        // 显示具体的错误信息
-        const errorMessage = errorData.message || '生成过程中出现错误'
-        messages.value[aiMessageIndex].content = `❌ ${errorMessage}`
-        messages.value[aiMessageIndex].loading = false
-        message.error(errorMessage)
-
-        streamCompleted = true
-        isGenerating.value = false
-        eventSource?.close()
-      } catch (parseError) {
-        console.error('解析错误事件失败:', parseError, '原始数据:', event.data)
-        handleError(new Error('服务器返回错误'), aiMessageIndex)
+        handleGenerationError(
+          new Error(errorData.message || '生成过程中出现错误'),
+          aiMessage,
+          fullContent,
+          errorData.message || '生成过程中出现错误',
+        )
+      } catch (error) {
+        handleGenerationError(error, aiMessage, fullContent, '服务器返回错误')
       }
     })
 
-    // 处理错误
-    eventSource.onerror = function () {
-      if (streamCompleted || !isGenerating.value) return
-      // 检查是否是正常的连接关闭
-      if (eventSource?.readyState === EventSource.CONNECTING) {
-        streamCompleted = true
-        isGenerating.value = false
-        eventSource?.close()
-
-        setTimeout(async () => {
-          await fetchAppInfo()
-          updatePreview()
-        }, 1000)
-      } else {
-        handleError(new Error('SSE连接错误'), aiMessageIndex)
-      }
+    eventSource.onerror = () => {
+      if (streamCompleted || activeEventSource !== eventSource || !isGenerating.value) return
+      streamCompleted = true
+      handleGenerationError(
+        new Error('SSE 连接中断'),
+        aiMessage,
+        fullContent,
+        '连接已中断，新版本未完成，当前仍显示上一版本',
+      )
     }
   } catch (error) {
-    console.error('创建 EventSource 失败：', error)
-    handleError(error, aiMessageIndex)
+    streamCompleted = true
+    handleGenerationError(error, aiMessage, fullContent, '无法连接生成服务')
   }
 }
 
-// 错误处理函数
-const handleError = (error: unknown, aiMessageIndex: number) => {
+const cancelContentPublish = () => {
+  if (contentPublishTimer !== null) {
+    clearTimeout(contentPublishTimer)
+    contentPublishTimer = null
+  }
+}
+
+const closeActiveEventSource = () => {
+  activeEventSource?.close()
+  activeEventSource = null
+}
+
+const finalizeAiMessage = (aiMessage: Message, content: string) => {
+  cancelContentPublish()
+  aiMessage.content = content
+  aiMessage.loading = false
+  aiMessage.streaming = false
+  scrollToBottom()
+}
+
+const handleGenerationError = (
+  error: unknown,
+  aiMessage: Message,
+  fullContent: string,
+  errorMessage: string,
+) => {
   console.error('生成代码失败：', error)
-  messages.value[aiMessageIndex].content = '抱歉，生成过程中出现了错误，请重试。'
-  messages.value[aiMessageIndex].loading = false
-  message.error('生成失败，请重试')
+  closeActiveEventSource()
+  const suffix = `\n\n> ⚠️ ${errorMessage}`
+  finalizeAiMessage(aiMessage, fullContent ? `${fullContent}${suffix}` : `❌ ${errorMessage}`)
+  message.error(errorMessage)
   isGenerating.value = false
 }
 
@@ -545,21 +605,51 @@ const handleError = (error: unknown, aiMessageIndex: number) => {
 const updatePreview = () => {
   if (appId.value) {
     const codeGenType = appInfo.value?.codeGenType || CodeGenTypeEnum.HTML
-    const newPreviewUrl = getStaticPreviewUrl(codeGenType, appId.value)
-    previewUrl.value = newPreviewUrl
-    previewReady.value = true
+    previewUrl.value = getStaticPreviewUrl(codeGenType, appId.value, previewRevision.value)
   }
 }
 
-// 滚动到底部
-const scrollToBottom = () => {
-  if (messagesContainer.value) {
-    messagesContainer.value.scrollTop = messagesContainer.value.scrollHeight
+const cancelScheduledScroll = () => {
+  scrollScheduleId += 1
+  if (scrollFrameId !== null) {
+    cancelAnimationFrame(scrollFrameId)
+    scrollFrameId = null
   }
+}
+
+// 合并同一帧内的滚动请求；用户主动向上阅读时不强制拉回底部。
+const scrollToBottom = (force = false) => {
+  const container = messagesContainer.value
+  const distanceToBottom = container
+    ? container.scrollHeight - container.scrollTop - container.clientHeight
+    : 0
+  if (!force && distanceToBottom > 80) {
+    cancelScheduledScroll()
+    return
+  }
+
+  const scheduleId = ++scrollScheduleId
+  void nextTick(() => {
+    if (scheduleId !== scrollScheduleId) return
+    if (scrollFrameId !== null) {
+      cancelAnimationFrame(scrollFrameId)
+    }
+    scrollFrameId = requestAnimationFrame(() => {
+      scrollFrameId = null
+      if (scheduleId !== scrollScheduleId) return
+      if (messagesContainer.value) {
+        messagesContainer.value.scrollTop = messagesContainer.value.scrollHeight
+      }
+    })
+  })
 }
 
 // 下载代码
 const downloadCode = async () => {
+  if (isGenerating.value) {
+    message.warning('请等待当前生成和构建完成')
+    return
+  }
   if (!appId.value) {
     message.error('应用ID不存在')
     return
@@ -598,6 +688,10 @@ const downloadCode = async () => {
 
 // 部署应用
 const deployApp = async () => {
+  if (isGenerating.value) {
+    message.warning('请等待当前生成和构建完成')
+    return
+  }
   if (!appId.value) {
     message.error('应用ID不存在')
     return
@@ -626,6 +720,10 @@ const deployApp = async () => {
 
 // 在新窗口打开预览
 const openInNewTab = () => {
+  if (isGenerating.value) {
+    message.warning('请等待当前生成和构建完成')
+    return
+  }
   if (previewUrl.value) {
     window.open(previewUrl.value, '_blank')
   }
@@ -657,20 +755,27 @@ const editApp = () => {
 
 // 删除应用
 const deleteApp = async () => {
-  if (!appInfo.value?.id) return
-
+  if (appInfo.value?.id == null || deletingApp.value || !(isOwner.value || isAdmin.value)) return
+  const version = loginUserStore.authVersion
+  deletingApp.value = true
   try {
-    const res = await deleteAppApi({ id: appInfo.value.id })
+    const res = await deleteAppApi({ id: String(appInfo.value.id) })
+    if (componentUnmounted || version !== loginUserStore.authVersion) return
     if (res.data.code === 0) {
       message.success('删除成功')
       appDetailVisible.value = false
-      router.push('/')
+      // 重新读取本人额度，删除成功与额度刷新失败互不影响。
+      void quotaStore.fetchQuota(true)
+      void router.push('/')
     } else {
       message.error('删除失败：' + res.data.message)
     }
   } catch (error) {
+    if (componentUnmounted || version !== loginUserStore.authVersion) return
     console.error('删除失败：', error)
     message.error('删除失败')
+  } finally {
+    deletingApp.value = false
   }
 }
 
@@ -703,19 +808,23 @@ const getInputPlaceholder = () => {
   return '请描述你想生成的网站，越详细效果越好哦'
 }
 
+const handleIframeMessage = (event: MessageEvent) => {
+  visualEditor.handleIframeMessage(event)
+}
+
 // 页面加载时获取应用信息
 onMounted(() => {
   fetchAppInfo()
-
-  // 监听 iframe 消息
-  window.addEventListener('message', (event) => {
-    visualEditor.handleIframeMessage(event)
-  })
+  window.addEventListener('message', handleIframeMessage)
 })
 
 // 清理资源
 onUnmounted(() => {
-  // EventSource 会在组件卸载时自动清理
+  componentUnmounted = true
+  closeActiveEventSource()
+  cancelContentPublish()
+  cancelScheduledScroll()
+  window.removeEventListener('message', handleIframeMessage)
 })
 </script>
 
@@ -782,7 +891,6 @@ onUnmounted(() => {
   flex: 0.9;
   padding: 16px;
   overflow-y: auto;
-  scroll-behavior: smooth;
 }
 
 .message-item {
@@ -809,6 +917,11 @@ onUnmounted(() => {
   border-radius: 12px;
   line-height: 1.5;
   word-wrap: break-word;
+}
+
+.streaming-content {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 .user-message .message-content {
@@ -919,8 +1032,22 @@ onUnmounted(() => {
   color: #666;
 }
 
+.preview-loading-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  background: rgba(255, 255, 255, 0.86);
+  backdrop-filter: blur(2px);
+}
+
 .preview-loading p {
-  margin-top: 16px;
+  margin: 16px 0 4px;
+  font-weight: 500;
+}
+
+.preview-loading span {
+  color: #999;
+  font-size: 13px;
 }
 
 .preview-iframe {

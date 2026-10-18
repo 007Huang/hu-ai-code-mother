@@ -5,6 +5,11 @@
 #port: 8123
 #servlet:context-path: /api
 
+app:
+  quota:
+    default-limit: 10
+  allowed-origins: ${APP_ALLOWED_ORIGINS:http://localhost:5173,http://127.0.0.1:5173,http://localhost:4173,http://127.0.0.1:4173}
+
 spring:
   application:
     name: hu-ai-code-mother-backend

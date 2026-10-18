@@ -74,6 +74,12 @@ public class User implements Serializable {
     private String userRole;
 
     /**
+     * 应用配额覆盖值；null 使用系统默认配额。
+     */
+    @Column("appLimit")
+    private Integer appLimit;
+
+    /**
      * 编辑时间
      */
     @Column("editTime")

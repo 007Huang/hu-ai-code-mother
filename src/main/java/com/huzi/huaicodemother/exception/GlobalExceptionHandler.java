@@ -7,6 +7,10 @@ import io.swagger.v3.oas.annotations.Hidden;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DataAccessException;
+import org.springframework.dao.PessimisticLockingFailureException;
+import org.springframework.dao.QueryTimeoutException;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.context.request.RequestContextHolder;
@@ -33,6 +37,22 @@ public class GlobalExceptionHandler {
         }
         // 对于普通请求，返回标准 JSON 响应
         return ResultUtils.error(e.getCode(), e.getMessage());
+    }
+
+    @ExceptionHandler(HttpMessageNotReadableException.class)
+    public BaseResponse<?> invalidRequestBodyHandler(HttpMessageNotReadableException e) {
+        return ResultUtils.error(ErrorCode.PARAMS_ERROR, "请求参数格式不正确");
+    }
+
+    @ExceptionHandler(DataAccessException.class)
+    public BaseResponse<?> dataAccessExceptionHandler(DataAccessException e) {
+        log.error("DataAccessException", e);
+        ErrorCode code = e instanceof PessimisticLockingFailureException || e instanceof QueryTimeoutException
+                ? ErrorCode.LOCK_BUSY_ERROR : ErrorCode.OPERATION_ERROR;
+        if (handleSseError(code.getCode(), code.getMessage())) {
+            return null;
+        }
+        return ResultUtils.error(code);
     }
 
     @ExceptionHandler(RuntimeException.class)
@@ -81,9 +101,7 @@ public class GlobalExceptionHandler {
                 String sseData = "event: business-error\ndata: " + errorJson + "\n\n";
                 response.getWriter().write(sseData);
                 response.getWriter().flush();
-                // 发送结束事件
-                response.getWriter().write("event: done\ndata: {}\n\n");
-                response.getWriter().flush();
+                // business-error 是终态事件，只有成功响应才发送 done。
                 // 表示已处理SSE请求
                 return true;
             } catch (IOException ioException) {

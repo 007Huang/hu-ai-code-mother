@@ -27,6 +27,12 @@ const router = createRouter({
       component: UserRegisterPage,
     },
     {
+      path: '/user/center',
+      name: '个人中心',
+      component: () => import('@/pages/user/UserCenterPage.vue'),
+      meta: { requiresAuth: true },
+    },
+    {
       path: '/admin/userManage',
       name: '用户管理',
       component: UserManagePage,
@@ -51,6 +57,7 @@ const router = createRouter({
       path: '/app/edit/:id',
       name: '编辑应用',
       component: AppEditPage,
+      meta: { requiresAuth: true },
     },
   ],
 })

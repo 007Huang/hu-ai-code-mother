@@ -89,11 +89,8 @@ public class JsonMessageStreamHandler {
                 ToolRequestMessage toolRequestMessage = JSONUtil.toBean(chunk, ToolRequestMessage.class);
                 String toolId = toolRequestMessage.getId();
                 String toolName = toolRequestMessage.getName();
-                // 检查是否是第一次看到这个工具 ID
-                if (toolId != null && !seenToolIds.contains(toolId)) {
-                    // 第一次调用这个工具，记录 ID 并完整返回工具信息
-//                    seenToolIds.add(toolId);
-//                    return "\n\n[选择工具] 写入文件\n\n";
+                // Set.add 仅在第一次看到该工具 ID 时返回 true，避免流式参数分片重复展示
+                if (toolId != null && seenToolIds.add(toolId)) {
                     // 根据工具名称获取工具实例
                     BaseTool tool = toolManager.getTool(toolName);
                     // 返回格式化的工具调用信息

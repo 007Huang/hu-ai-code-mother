@@ -18,8 +18,13 @@ import org.openqa.selenium.chrome.ChromeOptions;
 import org.openqa.selenium.support.ui.WebDriverWait;
 
 import java.io.File;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.UUID;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 @Slf4j
 public class WebScreenshotUtils {
@@ -30,12 +35,6 @@ public class WebScreenshotUtils {
         final int DEFAULT_WIDTH = 1600;
         final int DEFAULT_HEIGHT = 900;
         webDriver = initChromeDriver(DEFAULT_WIDTH, DEFAULT_HEIGHT);
-        //解决WebDriverManager 在下载 chromedriver 时遇到了网络超时问题可以在应用程序启动前设置系统属性
-//        System.setProperty("wdm.timeout", "300");
-//        System.setProperty("wdm.retryCount", "3");
-//// 设置国内镜像
-//        System.setProperty("wdm.chromeDownloadUrl", "https://npmmirror.com/mirrors/chromedriver/");
-
 
         // 注册 JVM 关闭钩子
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
@@ -106,11 +105,16 @@ public class WebScreenshotUtils {
      */
     private static WebDriver initChromeDriver(int width, int height) {
         try {
-//            // 自动管理 ChromeDriver
-          WebDriverManager.chromedriver().setup();
-            // 自动管理 ChromeDriver
-           // System.setProperty("wdm.chromeDriverMirrorUrl", "https://registry.npmmirror.com/binary.html?path=chromedriver");
-//            WebDriverManager.chromedriver().useMirror().setup();
+            // 优先复用本地缓存驱动（主版本匹配即可，不联网）；未命中才尝试在线下载
+            boolean useLocalDriver = resolveLocalChromeDriver();
+            if (!useLocalDriver) {
+                // 无本地驱动：尝试由 WebDriverManager 自动下载（网络可达时）
+                // 注意：WDM 6.x 对 chromedriver 115+ 的下载地址来自 Google 官方 JSON，无法走国内镜像，
+                // 若下载失败，请手动下载 chromedriver 放到 ~/.cache/selenium/chromedriver 或项目 driver 目录
+                System.setProperty("wdm.timeout", "60");
+                System.setProperty("wdm.retryCount", "1");
+                WebDriverManager.chromedriver().setup();
+            }
             // 配置 Chrome 选项
             ChromeOptions options = new ChromeOptions();
 //            // 无头模式
@@ -141,6 +145,87 @@ public class WebScreenshotUtils {
             throw new BusinessException(ErrorCode.SYSTEM_ERROR, "初始化 Chrome 浏览器失败");
         }
     }
+
+    /**
+     * 解析本地 ChromeDriver，避免联网下载：
+     * 1. 已通过 webdriver.chrome.driver 指定且文件存在 → 直接使用；
+     * 2. 扫描 WebDriverManager 缓存目录（~/.cache/selenium/chromedriver）及项目 driver 目录，
+     *    复用与本机 Chrome 主版本一致的驱动（小版本差异不影响使用）；
+     * 3. 均未命中 → 返回 false，由调用方尝试在线下载。
+     *
+     * @return true 表示已找到本地驱动（已设置 webdriver.chrome.driver），false 表示未命中
+     */
+    private static boolean resolveLocalChromeDriver() {
+        // 1. 已配置且存在，直接使用
+        String configured = System.getProperty("webdriver.chrome.driver");
+        if (StrUtil.isNotBlank(configured) && FileUtil.exist(configured)) {
+            log.info("使用已配置的 ChromeDriver: {}", configured);
+            return true;
+        }
+        // 2. 从候选目录中查找主版本匹配的驱动
+        String chromeMajor = detectChromeMajorVersion();
+        List<File> searchRoots = new ArrayList<>();
+        // WebDriverManager 默认缓存目录：~/.cache/selenium/chromedriver/{platform}/{version}/chromedriver.exe
+        searchRoots.add(new File(System.getProperty("user.home") + File.separator + ".cache" + File.separator
+                + "selenium" + File.separator + "chromedriver"));
+        // 项目目录下的 driver 目录（可手动放置 chromedriver.exe，结构同缓存目录）
+        searchRoots.add(new File(System.getProperty("user.dir") + File.separator + "driver"));
+        for (File cacheDir : searchRoots) {
+            if (!cacheDir.isDirectory()) {
+                continue;
+            }
+            File[] platformDirs = cacheDir.listFiles(File::isDirectory);
+            if (platformDirs == null) {
+                continue;
+            }
+            for (File platformDir : platformDirs) {
+                File[] versionDirs = platformDir.listFiles(File::isDirectory);
+                if (versionDirs == null) {
+                    continue;
+                }
+                for (File versionDir : versionDirs) {
+                    // 主版本一致即可使用（如 Chrome 151.x 可用 chromedriver 151.0.7922.76）
+                    if (chromeMajor != null && versionDir.getName().startsWith(chromeMajor + ".")) {
+                        File driverFile = new File(versionDir, "chromedriver.exe");
+                        if (driverFile.isFile()) {
+                            System.setProperty("webdriver.chrome.driver", driverFile.getAbsolutePath());
+                            log.info("复用本地 ChromeDriver: {} (匹配 Chrome 主版本 {})",
+                                    driverFile.getAbsolutePath(), chromeMajor);
+                            return true;
+                        }
+                    }
+                }
+            }
+        }
+        // 3. 未命中本地驱动
+        log.warn("未找到主版本匹配的本地 ChromeDriver（Chrome 主版本: {}），将尝试在线下载", chromeMajor);
+        return false;
+    }
+
+    /**
+     * 读取本机 Chrome 主版本号（Windows 注册表，如 151）
+     */
+    private static String detectChromeMajorVersion() {
+        String[] regPaths = {
+                "HKEY_CURRENT_USER\\Software\\Google\\Chrome\\BLBeacon",
+                "HKEY_LOCAL_MACHINE\\SOFTWARE\\Google\\Chrome\\BLBeacon"
+        };
+        for (String regPath : regPaths) {
+            try {
+                Process process = new ProcessBuilder("reg", "query", regPath, "/v", "version")
+                        .redirectErrorStream(true).start();
+                String output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+                Matcher matcher = Pattern.compile("(\\d+)\\.\\d+\\.\\d+\\.\\d+").matcher(output);
+                if (matcher.find()) {
+                    return matcher.group(1);
+                }
+            } catch (Exception e) {
+                log.warn("读取 Chrome 版本失败: {} - {}", regPath, e.getMessage());
+            }
+        }
+        return null;
+    }
+
     /**
      * 保存图片到文件
      */

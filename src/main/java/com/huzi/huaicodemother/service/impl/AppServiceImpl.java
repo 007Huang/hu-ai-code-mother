@@ -19,11 +19,16 @@ import com.huzi.huaicodemother.model.dto.app.AppQueryRequest;
 import com.huzi.huaicodemother.model.entity.User;
 import com.huzi.huaicodemother.model.enums.ChatHistoryMessageTypeEnum;
 import com.huzi.huaicodemother.model.enums.CodeGenTypeEnum;
+import com.huzi.huaicodemother.model.sse.AppStreamEvent;
 import com.huzi.huaicodemother.model.vo.AppVO;
 import com.huzi.huaicodemother.model.vo.UserVO;
 import com.huzi.huaicodemother.monitor.MonitorContext;
 import com.huzi.huaicodemother.monitor.MonitorContextHolder;
 import com.huzi.huaicodemother.service.ChatHistoryService;
+import com.huzi.huaicodemother.service.AppCreationService;
+import com.huzi.huaicodemother.service.AppQuotaService;
+import com.huzi.huaicodemother.service.FeaturedAppCacheInvalidator;
+import com.huzi.huaicodemother.mapper.UserMapper;
 import com.huzi.huaicodemother.service.ScreenshotService;
 import com.huzi.huaicodemother.service.UserService;
 import com.mybatisflex.core.query.QueryWrapper;
@@ -34,8 +39,13 @@ import com.huzi.huaicodemother.service.AppService;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.task.TaskExecutor;
+import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Isolation;
+import org.springframework.transaction.annotation.Transactional;
 import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
 
 import java.io.File;
 import java.io.Serializable;
@@ -44,6 +54,9 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.CancellationException;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.FutureTask;
 import java.util.stream.Collectors;
 
 /**
@@ -67,10 +80,20 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App> implements AppSe
     private StreamHandlerExecutor streamHandlerExecutor;
     @Resource
     private VueProjectBuilder vueProjectBuilder;
+    @Resource(name = "vueProjectBuildTaskExecutor")
+    private TaskExecutor vueProjectBuildTaskExecutor;
     @Resource
     private ScreenshotService screenshotService;
     @Resource
     private AiCodeGenTypeRoutingServiceFactory aiCodeGenTypeRoutingServiceFactory;
+    @Resource
+    private AppQuotaService appQuotaService;
+    @Resource
+    private AppCreationService appCreationService;
+    @Resource
+    private UserMapper userMapper;
+    @Resource
+    private FeaturedAppCacheInvalidator featuredAppCacheInvalidator;
 
 
 //    @Resource
@@ -78,7 +101,7 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App> implements AppSe
 
 
     @Override
-    public Flux<String> chatToGenCode(Long appId, String message, User loginUser) {
+    public Flux<AppStreamEvent> chatToGenCode(Long appId, String message, User loginUser) {
         // 1.校验参数
         ThrowUtils.throwIf(appId == null || appId <= 0, ErrorCode.PARAMS_ERROR, "应用 ID 不合法");
         ThrowUtils.throwIf(StrUtil.isBlank(message), ErrorCode.PARAMS_ERROR, "请输入对话内容");
@@ -103,19 +126,74 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App> implements AppSe
         //7。调用AI生成代码
         Flux<String> codeStream = aiCodeGeneratorFacade.generateAndSaveCodeStream(message, codeGenTypeEnum, appId);
 //                .subscribe(System.out::println);
-        //8.收集AI响应的内容，并且在完成对话后保存记录到对话历史
-        return streamHandlerExecutor.doExecute(codeStream, chatHistoryService, appId, loginUser, codeGenTypeEnum)
-                .doFinally(signalType -> {
-                    // 流结束时清理（无论成功/失败/取消）
-                    MonitorContextHolder.clearContext();
-                });
+        //8.收集 AI 响应内容，并在完成对话后保存记录到对话历史
+        Flux<AppStreamEvent> responseStream = streamHandlerExecutor
+                .doExecute(codeStream, chatHistoryService, appId, loginUser, codeGenTypeEnum)
+                .map(AppStreamEvent::content);
+        if (codeGenTypeEnum == CodeGenTypeEnum.VUE_PROJECT) {
+            responseStream = responseStream.concatWith(buildVueProject(appId));
+        }
+        return responseStream.doFinally(signalType -> {
+            // 流结束时清理（无论成功/失败/取消）
+            MonitorContextHolder.clearContext();
+        });
+    }
+
+    private Flux<AppStreamEvent> buildVueProject(Long appId) {
+        String projectPath = AppConstant.CODE_OUTPUT_ROOT_DIR + File.separator + "vue_project_" + appId;
+        AppStreamEvent buildingEvent = AppStreamEvent.phase("building", "代码已生成，正在构建预览...");
+        Mono<Void> buildTask = Mono.create(sink -> {
+            FutureTask<Void> task = new FutureTask<>(() -> {
+                boolean buildSuccess = vueProjectBuilder.buildProject(projectPath);
+                if (!buildSuccess) {
+                    throw new BusinessException(ErrorCode.SYSTEM_ERROR, "Vue 项目构建失败，请检查生成代码和依赖");
+                }
+                return null;
+            }) {
+                @Override
+                protected void done() {
+                    try {
+                        get();
+                        sink.success();
+                    } catch (CancellationException ignored) {
+                        // SSE 已断开，无需再向已取消的订阅发送结果。
+                    } catch (ExecutionException error) {
+                        sink.error(error.getCause());
+                    } catch (InterruptedException error) {
+                        Thread.currentThread().interrupt();
+                        sink.error(error);
+                    }
+                }
+            };
+            sink.onDispose(() -> cancelBuildTask(task));
+            try {
+                vueProjectBuildTaskExecutor.execute(task);
+            } catch (RuntimeException error) {
+                sink.error(new BusinessException(
+                        ErrorCode.SYSTEM_ERROR, "当前构建任务较多，请稍后重试"));
+            }
+        });
+        return Flux.concat(Mono.just(buildingEvent), buildTask.thenMany(Flux.empty()));
+    }
+
+    private void cancelBuildTask(FutureTask<?> task) {
+        task.cancel(true);
+        if (vueProjectBuildTaskExecutor instanceof ThreadPoolTaskExecutor executor) {
+            executor.getThreadPoolExecutor().remove(task);
+        }
     }
 
     @Override
     public Long createApp(AppAddRequest appAddRequest, User loginUser) {
         // 参数校验
+        ThrowUtils.throwIf(appAddRequest == null, ErrorCode.PARAMS_ERROR);
+        ThrowUtils.throwIf(loginUser == null || loginUser.getId() == null || loginUser.getId() <= 0,
+                ErrorCode.NOT_LOGIN_ERROR);
         String initPrompt = appAddRequest.getInitPrompt();
         ThrowUtils.throwIf(StrUtil.isBlank(initPrompt), ErrorCode.PARAMS_ERROR, "初始化 prompt 不能为空");
+        // 路由调用前快速拒绝；最终创建事务仍会加锁重新检查，防止并发超额。
+        ThrowUtils.throwIf(!appQuotaService.getQuota(loginUser.getId()).getCanCreate(),
+                ErrorCode.APP_QUOTA_EXCEEDED);
         // 构造入库对象
         App app = new App();
         BeanUtil.copyProperties(appAddRequest, app);
@@ -128,11 +206,10 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App> implements AppSe
         CodeGenTypeEnum selectedCodeGenType = routingService.routeCodeGenType(initPrompt);
         //        CodeGenTypeEnum selectedCodeGenType = aiCodeGenTypeRoutingService.routeCodeGenType(initPrompt);
         app.setCodeGenType(selectedCodeGenType.getValue());
-        // 插入数据库
-        boolean result = this.save(app);
-        ThrowUtils.throwIf(!result, ErrorCode.OPERATION_ERROR);
-        log.info("应用创建成功，ID: {}, 类型: {}", app.getId(), selectedCodeGenType.getValue());
-        return app.getId();
+        // 外部路由已经结束，独立短事务完成锁、配额复检和插入。
+        Long appId = appCreationService.createApp(app);
+        log.info("应用创建成功，ID: {}, 类型: {}", appId, selectedCodeGenType.getValue());
+        return appId;
     }
 
     @Override
@@ -285,26 +362,32 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App> implements AppSe
  * @param id
  * @return
  */
-@Override
+    @Override
+    @Transactional(isolation = Isolation.READ_COMMITTED, rollbackFor = Exception.class)
     public boolean removeById(Serializable id) {
-    if (id == null) {
-        return false;
-    }
-    // 转换为 Long 类型
-    long appId = Long.parseLong(id.toString());
-    if (appId <= 0) {
-        return false;
-    }
-    //先删除关联的对话历史
-    try {
+        if (id == null) {
+            return false;
+        }
+        long appId;
+        try {
+            appId = Long.parseLong(id.toString());
+        } catch (NumberFormatException e) {
+            throw new BusinessException(ErrorCode.PARAMS_ERROR, "应用 ID 不合法");
+        }
+        if (appId <= 0) {
+            return false;
+        }
+        App app = mapper.selectOneById(appId);
+        ThrowUtils.throwIf(app == null, ErrorCode.NOT_FOUND_ERROR, "应用不存在");
+        // 与创建/配额修改使用同一用户锁；已删除用户仍允许管理员清理遗留应用。
+        userMapper.selectActiveUserForUpdate(app.getUserId());
+        // false 仅表示没有可删除的历史；数据库错误必须抛出并回滚整个操作。
         chatHistoryService.deleteByAppId(appId);
-    } catch (Exception e) {
-        //记录日志但不阻止应用删除
-        log.error("删除应用时，关联删除对话历史失败", e.getMessage());
+        ThrowUtils.throwIf(mapper.deleteById(appId) != 1,
+                ErrorCode.OPERATION_ERROR, "删除应用失败");
+        featuredAppCacheInvalidator.invalidateAfterCommit();
+        return true;
     }
-    // 删除应用
-    return super.removeById(id);
-}
 }
 
 

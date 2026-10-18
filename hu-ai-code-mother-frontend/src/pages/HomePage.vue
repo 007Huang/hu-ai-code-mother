@@ -1,14 +1,25 @@
 <script setup lang="ts">
-import { ref, reactive, onMounted } from 'vue'
+import { computed, ref, reactive, onMounted, onUnmounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
 import { useLoginUserStore } from '@/stores/loginUser'
+import { useAppQuotaStore } from '@/stores/appQuota'
 import { addApp, listMyAppVoByPage, listGoodAppVoByPage } from '@/api/appController'
 import { getDeployUrl } from '@/config/env'
 import AppCard from '@/components/AppCard.vue'
+import { toSafeCount } from '@/utils/count'
 
 const router = useRouter()
 const loginUserStore = useLoginUserStore()
+const quotaStore = useAppQuotaStore()
+const userId = computed(() => String(loginUserStore.loginUser.id ?? ''))
+const quotaBlocked = computed(() => !!userId.value && quotaStore.quota?.canCreate === false)
+const quotaRejected = ref(false)
+let disposed = false
+let myAppsSequence = 0
+let createSequence = 0
+const currentIdentity = (id: string, version: number) =>
+  !disposed && userId.value === id && loginUserStore.authVersion === version
 
 // 用户提示词
 const userPrompt = ref('')
@@ -39,45 +50,64 @@ const setPrompt = (prompt: string) => {
 
 // 创建应用
 const createApp = async () => {
+  if (creating.value) return
   if (!userPrompt.value.trim()) {
     message.warning('请输入应用描述')
     return
   }
 
-  if (!loginUserStore.loginUser.id) {
+  if (!userId.value) {
     message.warning('请先登录')
     await router.push('/user/login')
     return
   }
+  if (quotaBlocked.value) {
+    message.warning('应用数量已达上限，请前往个人中心管理我的作品')
+    return
+  }
 
+  const id = userId.value
+  const version = loginUserStore.authVersion
+  const sequence = ++createSequence
   creating.value = true
+  quotaRejected.value = false
   try {
-    const res = await addApp({
-      initPrompt: userPrompt.value.trim(),
-    })
-
+    const res = await addApp({ initPrompt: userPrompt.value.trim() })
+    if (!currentIdentity(id, version) || sequence !== createSequence) return
     if (res.data.code === 0 && res.data.data) {
       message.success('应用创建成功')
-      // 跳转到对话页面，确保ID是字符串类型
+      void quotaStore.fetchQuota(true)
       const appId = String(res.data.data)
       await router.push(`/app/chat/${appId}`)
+    } else if (res.data.code === 40301) {
+      quotaRejected.value = true
+      message.warning(res.data.message || '应用数量已达上限，请管理已有作品后重试')
+      await quotaStore.fetchQuota(true)
     } else {
       message.error('创建失败：' + res.data.message)
     }
   } catch (error) {
-    console.error('创建应用失败：', error)
-    message.error('创建失败，请重试')
+    if (!currentIdentity(id, version) || sequence !== createSequence) return
+    const code = (error as { response?: { data?: { code?: number } } })?.response?.data?.code
+    if (code === 40301) {
+      quotaRejected.value = true
+      message.warning('应用数量已达上限，已保留描述，请先管理我的作品')
+      await quotaStore.fetchQuota(true)
+    } else {
+      console.error('创建应用失败：', error)
+      message.error('创建失败，请重试')
+    }
   } finally {
-    creating.value = false
+    if (currentIdentity(id, version) && sequence === createSequence) creating.value = false
   }
 }
 
 // 加载我的应用
 const loadMyApps = async () => {
-  if (!loginUserStore.loginUser.id) {
-    return
-  }
-
+  if (!userId.value || disposed) return
+  const id = userId.value
+  const version = loginUserStore.authVersion
+  const sequence = ++myAppsSequence
   try {
     const res = await listMyAppVoByPage({
       pageNum: myAppsPage.current,
@@ -86,12 +116,15 @@ const loadMyApps = async () => {
       sortOrder: 'desc',
     })
 
+    if (!currentIdentity(id, version) || sequence !== myAppsSequence) return
     if (res.data.code === 0 && res.data.data) {
       myApps.value = res.data.data.records || []
-      myAppsPage.total = res.data.data.totalRow || 0
+      myAppsPage.total = toSafeCount(res.data.data.totalRow)
     }
   } catch (error) {
-    console.error('加载我的应用失败：', error)
+    if (currentIdentity(id, version) && sequence === myAppsSequence) {
+      console.error('加载我的应用失败：', error)
+    }
   }
 }
 
@@ -107,7 +140,7 @@ const loadFeaturedApps = async () => {
 
     if (res.data.code === 0 && res.data.data) {
       featuredApps.value = res.data.data.records || []
-      featuredAppsPage.total = res.data.data.totalRow || 0
+      featuredAppsPage.total = toSafeCount(res.data.data.totalRow)
     }
   } catch (error) {
     console.error('加载精选应用失败：', error)
@@ -131,9 +164,27 @@ const viewWork = (app: API.AppVO) => {
 
 // 格式化时间函数已移除，不再需要显示创建时间
 
+watch([userId, () => loginUserStore.authVersion], () => {
+  myAppsSequence += 1
+  createSequence += 1
+  myApps.value = []
+  myAppsPage.current = 1
+  myAppsPage.total = 0
+  creating.value = false
+  quotaRejected.value = false
+  if (userId.value) {
+    void loadMyApps()
+    void quotaStore.fetchQuota()
+  }
+}, { immediate: true })
+
+watch(() => quotaStore.quota?.canCreate, (canCreate) => {
+  if (canCreate === true) quotaRejected.value = false
+})
+
+let removeMouseListener: (() => void) | undefined
 // 页面加载时获取数据
 onMounted(() => {
-  loadMyApps()
   loadFeaturedApps()
 
   // 鼠标跟随光效
@@ -149,10 +200,13 @@ onMounted(() => {
 
   document.addEventListener('mousemove', handleMouseMove)
 
-  // 清理事件监听器
-  return () => {
-    document.removeEventListener('mousemove', handleMouseMove)
-  }
+  removeMouseListener = () => document.removeEventListener('mousemove', handleMouseMove)
+})
+onUnmounted(() => {
+  disposed = true
+  myAppsSequence += 1
+  createSequence += 1
+  removeMouseListener?.()
 })
 </script>
 
@@ -170,12 +224,23 @@ onMounted(() => {
         <a-textarea v-model:value="userPrompt" placeholder="帮我创建个人备忘录页面" :rows="4" :maxlength="1000"
           class="prompt-input" />
         <div class="input-actions">
-          <a-button type="primary" size="large" @click="createApp" :loading="creating">
+          <a-button type="primary" size="large" @click="createApp" :loading="creating" :disabled="quotaBlocked" aria-label="创建应用" data-testid="create-app">
             <template #icon>
               <span>↑</span>
             </template>
           </a-button>
         </div>
+      </div>
+
+      <div v-if="userId" class="quota-notice" aria-live="polite">
+        <template v-if="quotaBlocked || quotaRejected">
+          <a-alert type="warning" show-icon message="应用数量已达上限，描述已保留">
+            <template #description>请先 <RouterLink to="/user/center?tab=works">管理我的作品</RouterLink>，删除不需要的应用后再创建。</template>
+          </a-alert>
+        </template>
+        <p v-else-if="quotaStore.loading">正在加载应用额度…</p>
+        <p v-else-if="quotaStore.error">额度暂时加载失败，仍可尝试创建，由服务端校验。<a-button type="link" @click="quotaStore.fetchQuota(true)">重试</a-button></p>
+        <p v-else-if="quotaStore.quota">已使用 {{ quotaStore.quota.usedCount }} / {{ quotaStore.quota.limitCount }} 个应用，剩余 {{ quotaStore.quota.remainingCount }} 个。<RouterLink to="/user/center?tab=quota">查看额度</RouterLink></p>
       </div>
 
       <!-- 快捷按钮 -->
@@ -454,6 +519,12 @@ onMounted(() => {
   display: flex;
   gap: 8px;
   align-items: center;
+}
+
+.quota-notice {
+  max-width: 800px;
+  margin: 0 auto 24px;
+  color: #475569;
 }
 
 /* 快捷按钮 */

@@ -3,6 +3,7 @@ package com.huzi.huaicodemother.service;
 import com.huzi.huaicodemother.model.dto.app.AppAddRequest;
 import com.huzi.huaicodemother.model.dto.app.AppQueryRequest;
 import com.huzi.huaicodemother.model.entity.User;
+import com.huzi.huaicodemother.model.sse.AppStreamEvent;
 import com.huzi.huaicodemother.model.vo.AppVO;
 import com.mybatisflex.core.query.QueryWrapper;
 import com.mybatisflex.core.service.IService;
@@ -31,7 +32,7 @@ public interface AppService extends IService<App> {
      * @param loginUser 当前登录用户
      * @return 生成的代码
      */
-    Flux<String> chatToGenCode(Long appId, String message, User loginUser);
+    Flux<AppStreamEvent> chatToGenCode(Long appId, String message, User loginUser);
     /**
      * 创建应用
      *

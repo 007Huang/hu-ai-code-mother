@@ -6,6 +6,10 @@ import cn.hutool.core.util.StrUtil;
 import com.huzi.huaicodemother.exception.BusinessException;
 import com.huzi.huaicodemother.exception.ErrorCode;
 import com.huzi.huaicodemother.model.dto.user.UserQueryRequest;
+import com.huzi.huaicodemother.model.dto.user.UserUpdateMyRequest;
+import com.huzi.huaicodemother.exception.ThrowUtils;
+import com.huzi.huaicodemother.service.FeaturedAppCacheInvalidator;
+import jakarta.annotation.Resource;
 import com.huzi.huaicodemother.model.enums.UserRoleEnum;
 import com.huzi.huaicodemother.model.vo.LoginUserVO;
 import com.huzi.huaicodemother.model.vo.UserVO;
@@ -16,6 +20,12 @@ import com.huzi.huaicodemother.mapper.UserMapper;
 import com.huzi.huaicodemother.service.UserService;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.annotation.Isolation;
+
+import java.net.URI;
+import java.net.URISyntaxException;
+import java.time.LocalDateTime;
 import org.springframework.util.DigestUtils;
 
 import java.nio.charset.StandardCharsets;
@@ -33,6 +43,61 @@ import static com.huzi.huaicodemother.constant.UserConstant.USER_LOGIN_STATE;
  */
 @Service
 public class UserServiceImpl extends ServiceImpl<UserMapper, User>  implements UserService{
+
+    @Resource
+    private FeaturedAppCacheInvalidator featuredAppCacheInvalidator;
+
+    @Override
+    @Transactional(isolation = Isolation.READ_COMMITTED, rollbackFor = Exception.class)
+    public LoginUserVO updateMyUser(UserUpdateMyRequest updateRequest, User loginUser) {
+        ThrowUtils.throwIf(updateRequest == null, ErrorCode.PARAMS_ERROR);
+        ThrowUtils.throwIf(loginUser == null || loginUser.getId() == null || loginUser.getId() <= 0,
+                ErrorCode.NOT_LOGIN_ERROR);
+        User update = new User();
+        update.setId(loginUser.getId());
+        if (updateRequest.getUserName() != null) {
+            String userName = updateRequest.getUserName().trim();
+            ThrowUtils.throwIf(userName.length() < 2 || userName.length() > 20,
+                    ErrorCode.PARAMS_ERROR, "昵称长度必须在 2 到 20 之间");
+            update.setUserName(userName);
+        }
+        if (updateRequest.getUserProfile() != null) {
+            String userProfile = updateRequest.getUserProfile();
+            ThrowUtils.throwIf(userProfile.length() > 200, ErrorCode.PARAMS_ERROR, "简介不能超过 200 字");
+            update.setUserProfile(userProfile);
+        }
+        if (updateRequest.getUserAvatar() != null) {
+            String userAvatar = updateRequest.getUserAvatar().trim();
+            validateAvatar(userAvatar);
+            update.setUserAvatar(userAvatar);
+        }
+        User currentUser = mapper.selectActiveUserForUpdate(loginUser.getId());
+        ThrowUtils.throwIf(currentUser == null, ErrorCode.NOT_LOGIN_ERROR);
+        update.setEditTime(LocalDateTime.now());
+        // true 仅忽略 null，不忽略空字符串；空简介/头像明确清空。
+        ThrowUtils.throwIf(mapper.update(update, true) != 1,
+                ErrorCode.OPERATION_ERROR, "更新个人资料失败");
+        User updatedUser = mapper.selectActiveUser(loginUser.getId());
+        ThrowUtils.throwIf(updatedUser == null, ErrorCode.NOT_LOGIN_ERROR);
+        featuredAppCacheInvalidator.invalidateAfterCommit();
+        return getLoginUserVO(updatedUser);
+    }
+
+    private void validateAvatar(String avatar) {
+        ThrowUtils.throwIf(avatar.length() > 1024, ErrorCode.PARAMS_ERROR, "头像地址不能超过 1024 字符");
+        if (avatar.isEmpty()) {
+            return;
+        }
+        try {
+            URI uri = new URI(avatar);
+            ThrowUtils.throwIf(!"https".equalsIgnoreCase(uri.getScheme())
+                            || uri.getHost() == null || uri.getHost().isBlank()
+                            || uri.getRawUserInfo() != null || uri.getPort() > 65535 || uri.getPort() == 0,
+                    ErrorCode.PARAMS_ERROR, "头像必须是有效的 HTTPS 地址，且不能包含用户凭据");
+        } catch (URISyntaxException e) {
+            throw new BusinessException(ErrorCode.PARAMS_ERROR, "头像地址无效");
+        }
+    }
 
     @Override
     public long userRegister(String userAccount, String userPassword, String checkPassword) {

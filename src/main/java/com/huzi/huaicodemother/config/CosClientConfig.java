@@ -6,17 +6,21 @@ import com.qcloud.cos.auth.BasicCOSCredentials;
 import com.qcloud.cos.auth.COSCredentials;
 import com.qcloud.cos.region.Region;
 import lombok.Data;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
 /**
  * 腾讯云COS配置类
- * 
- * @author yupi
+ *必须要填写 COS 配置才能启动项目，但有些模块是不需要 CosManager 的。因此我们添加条件注解，没配置就不加载
  */
 @Configuration
 @ConfigurationProperties(prefix = "cos.client")
+@ConditionalOnProperty(
+        prefix = "cos.client",
+        name = {"host", "secretId", "secretKey", "region", "bucket"}
+)
 @Data
 public class CosClientConfig {
 

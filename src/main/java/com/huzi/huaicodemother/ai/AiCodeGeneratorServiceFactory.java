@@ -92,7 +92,7 @@ public class AiCodeGeneratorServiceFactory {
                 .builder()
                 .id(appId)
                 .chatMemoryStore(redisChatMemoryStore)
-                .maxMessages(20)
+                .maxMessages(60)//将聊天记忆从 20 条临时提高到 50～60 条，避免复杂任务很快丢掉用户消息
                 .build();
         //从数据库中加载对话历史到记忆中，会话初始化隔离
         chatHistoryService.loadChatHistoryToMemory(appId, chatMemory, 20);
@@ -109,7 +109,7 @@ public class AiCodeGeneratorServiceFactory {
                         .hallucinatedToolNameStrategy(toolExecutionRequest -> ToolExecutionResultMessage.from(
                                 toolExecutionRequest, "Error: there is no tool called " + toolExecutionRequest.name()
                         ))
-                        .maxSequentialToolsInvocations(20)  // 最多连续调用 20 次工具
+                        .maxSequentialToolsInvocations(20)  // 最多连续调用 20 次工具，避免死循环
                         .inputGuardrails(new PromptSafetyInputGuardrail())  // 添加输入护轨
                        // .outputGuardrails(new RetryOutputGuardrail())// 添加输出护轨，为了流式输出，这里不使用
                         .build();

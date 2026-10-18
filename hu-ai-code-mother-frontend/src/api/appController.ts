@@ -169,6 +169,14 @@ export async function listMyAppVoByPage(
   })
 }
 
+/** 此处后端没有提供注释 GET /app/my/quota */
+export async function getMyAppQuota(options?: { [key: string]: any }) {
+  return request<API.BaseResponseAppQuotaVO>('/app/my/quota', {
+    method: 'GET',
+    ...(options || {}),
+  })
+}
+
 /** 此处后端没有提供注释 POST /app/update */
 export async function updateApp(body: API.AppUpdateRequest, options?: { [key: string]: any }) {
   return request<API.BaseResponseBoolean>('/app/update', {

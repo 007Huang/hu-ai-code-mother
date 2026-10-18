@@ -71,6 +71,7 @@ import { useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
 import { listAllChatHistoryByPageForAdmin } from '@/api/chatHistoryController'
 import { formatTime } from '@/utils/time'
+import { toSafeCount } from '@/utils/count'
 
 const router = useRouter()
 
@@ -132,7 +133,7 @@ const fetchData = async () => {
     })
     if (res.data.data) {
       data.value = res.data.data.records ?? []
-      total.value = res.data.data.totalRow ?? 0
+      total.value = toSafeCount(res.data.data.totalRow)
     } else {
       message.error('获取数据失败，' + res.data.message)
     }
@@ -150,8 +151,8 @@ onMounted(() => {
 // 分页参数
 const pagination = computed(() => {
   return {
-    current: searchParams.pageNum ?? 1,
-    pageSize: searchParams.pageSize ?? 10,
+    current: toSafeCount(searchParams.pageNum ?? 1),
+    pageSize: toSafeCount(searchParams.pageSize ?? 10),
     total: total.value,
     showSizeChanger: true,
     showTotal: (total: number) => `共 ${total} 条`,
